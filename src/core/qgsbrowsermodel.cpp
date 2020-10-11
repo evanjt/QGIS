@@ -49,6 +49,10 @@ QgsBrowserModel::QgsBrowserModel( QObject *parent )
   : QAbstractItemModel( parent )
 
 {
+  connect( QgsApplication::dataItemProviderRegistry(), &QgsDataItemProviderRegistry::providerAdded,
+           this, &QgsBrowserModel::dataItemProviderAdded );
+  connect( QgsApplication::dataItemProviderRegistry(), &QgsDataItemProviderRegistry::providerWillBeRemoved,
+           this, &QgsBrowserModel::dataItemProviderWillBeRemoved );
 }
 
 QgsBrowserModel::~QgsBrowserModel()
@@ -88,7 +92,9 @@ void QgsBrowserModel::addRootItems()
   updateProjectHome();
 
   // give the home directory a prominent third place
-  QgsDirectoryItem *item = new QgsDirectoryItem( nullptr, tr( "Home" ), QDir::homePath(), QStringLiteral( HOME_PREFIX ) + QDir::homePath() );
+  QgsDirectoryItem *item = new QgsDirectoryItem( nullptr, tr( "Home" ), QDir::homePath(),
+      QStringLiteral( HOME_PREFIX ) + QDir::homePath(),
+      QStringLiteral( "special:Home" ) );
   item->setSortKey( QStringLiteral( " 2" ) );
   setupItemConnections( item );
   mRootItems << item;
@@ -110,7 +116,7 @@ void QgsBrowserModel::addRootItems()
     if ( QgsDirectoryItem::hiddenPath( path ) )
       continue;
 
-    QgsDirectoryItem *item = new QgsDirectoryItem( nullptr, path, path );
+    QgsDirectoryItem *item = new QgsDirectoryItem( nullptr, path, path, path, QStringLiteral( "special:Drives" ) );
     item->setSortKey( QStringLiteral( " 3 %1" ).arg( path ) );
     mDriveItems.insert( path, item );
 
@@ -120,31 +126,20 @@ void QgsBrowserModel::addRootItems()
 
 #ifdef Q_OS_MAC
   QString path = QString( "/Volumes" );
-  QgsDirectoryItem *vols = new QgsDirectoryItem( nullptr, path, path );
+  QgsDirectoryItem *vols = new QgsDirectoryItem( nullptr, path, path, path, QStringLiteral( "special:Volumes" ) );
+  setupItemConnections( vols );
   mRootItems << vols;
 #endif
 
   // container for displaying providers as sorted groups (by QgsDataProvider::DataCapability enum)
-  QMap<int, QgsDataItem *> providerMap;
+  QMultiMap<int, QgsDataItem *> providerMap;
 
   const auto constProviders = QgsApplication::dataItemProviderRegistry()->providers();
   for ( QgsDataItemProvider *pr : constProviders )
   {
-    int capabilities = pr->capabilities();
-    if ( capabilities == QgsDataProvider::NoDataCapabilities )
+    if ( QgsDataItem *item = addProviderRootItem( pr ) )
     {
-      QgsDebugMsgLevel( pr->name() + " does not have any dataCapabilities", 4 );
-      continue;
-    }
-
-    QgsDataItem *item = pr->createDataItem( QString(), nullptr );  // empty path -> top level
-    if ( item )
-    {
-      // Forward the signal from the root items to the model (and then to the app)
-      connect( item, &QgsDataItem::connectionsChanged, this, &QgsBrowserModel::connectionsChanged );
-      QgsDebugMsgLevel( "Add new top level item : " + item->name(), 4 );
-      setupItemConnections( item );
-      providerMap.insertMulti( capabilities, item );
+      providerMap.insert( pr->capabilities(), item );
     }
   }
 
@@ -178,6 +173,47 @@ void QgsBrowserModel::removeRootItems()
   mDriveItems.clear();
 }
 
+void QgsBrowserModel::dataItemProviderAdded( QgsDataItemProvider *provider )
+{
+  if ( !mInitialized )
+    return;
+
+  if ( QgsDataItem *item = addProviderRootItem( provider ) )
+  {
+    beginInsertRows( QModelIndex(), rowCount(), rowCount() );
+    mRootItems << item;
+    endInsertRows();
+  }
+}
+
+void QgsBrowserModel::dataItemProviderWillBeRemoved( QgsDataItemProvider *provider )
+{
+  const auto constMRootItems = mRootItems;
+  for ( QgsDataItem *item : constMRootItems )
+  {
+    if ( item->providerKey() == provider->name() )
+    {
+      removeRootItem( item );
+      break;  // assuming there is max. 1 root item per provider
+    }
+  }
+}
+
+void QgsBrowserModel::onConnectionsChanged( const QString &providerKey )
+{
+  // refresh the matching provider
+  for ( QgsDataItem *item : qgis::as_const( mRootItems ) )
+  {
+    if ( item->providerKey() == providerKey )
+    {
+      item->refresh();
+      break;  // assuming there is max. 1 root item per provider
+    }
+  }
+
+  emit connectionsChanged( providerKey );
+}
+
 QMap<QString, QgsDirectoryItem *> QgsBrowserModel::driveItems() const
 {
   return mDriveItems;
@@ -194,7 +230,6 @@ void QgsBrowserModel::initialize()
   }
 }
 
-
 Qt::ItemFlags QgsBrowserModel::flags( const QModelIndex &index ) const
 {
   if ( !index.isValid() )
@@ -202,7 +237,14 @@ Qt::ItemFlags QgsBrowserModel::flags( const QModelIndex &index ) const
 
   Qt::ItemFlags flags = Qt::ItemIsEnabled | Qt::ItemIsSelectable;
 
-  QgsDataItem *ptr = reinterpret_cast< QgsDataItem * >( index.internalPointer() );
+  QgsDataItem *ptr = dataItem( index );
+
+  if ( !ptr )
+  {
+    QgsDebugMsgLevel( QStringLiteral( "FLAGS PROBLEM!" ), 4 );
+    return Qt::ItemFlags();
+  }
+
   if ( ptr->hasDragEnabled() )
     flags |= Qt::ItemIsDragEnabled;
 
@@ -255,6 +297,10 @@ QVariant QgsBrowserModel::data( const QModelIndex &index, int role ) const
       return lyrItem->comments();
     }
     return QVariant();
+  }
+  else if ( role == QgsBrowserModel::ProviderKeyRole )
+  {
+    return item->providerKey();
   }
   else
   {
@@ -452,7 +498,7 @@ void QgsBrowserModel::refreshDrives()
     // does an item for this drive already exist?
     if ( !mDriveItems.contains( path ) )
     {
-      QgsDirectoryItem *item = new QgsDirectoryItem( nullptr, path, path );
+      QgsDirectoryItem *item = new QgsDirectoryItem( nullptr, path, path, path, QStringLiteral( "special:Drives" ) );
       item->setSortKey( QStringLiteral( " 3 %1" ).arg( path ) );
 
       mDriveItems.insert( path, item );
@@ -498,7 +544,6 @@ QModelIndex QgsBrowserModel::findItem( QgsDataItem *item, QgsDataItem *parent ) 
     if ( childIndex.isValid() )
       return childIndex;
   }
-
   return QModelIndex();
 }
 
@@ -567,7 +612,7 @@ void QgsBrowserModel::setupItemConnections( QgsDataItem *item )
   // if it's a collection item, also forwards connectionsChanged
   QgsDataCollectionItem *collectionItem = qobject_cast<QgsDataCollectionItem *>( item );
   if ( collectionItem )
-    connect( collectionItem, &QgsDataCollectionItem::connectionsChanged, this, &QgsBrowserModel::connectionsChanged );
+    connect( collectionItem, &QgsDataCollectionItem::connectionsChanged, this, &QgsBrowserModel::onConnectionsChanged );
 }
 
 QStringList QgsBrowserModel::mimeTypes() const
@@ -720,3 +765,24 @@ void QgsBrowserModel::removeRootItem( QgsDataItem *item )
   endRemoveRows();
 }
 
+QgsDataItem *QgsBrowserModel::addProviderRootItem( QgsDataItemProvider *pr )
+{
+  int capabilities = pr->capabilities();
+  if ( capabilities == QgsDataProvider::NoDataCapabilities )
+  {
+    QgsDebugMsgLevel( pr->name() + " does not have any dataCapabilities", 4 );
+    return nullptr;
+  }
+
+  QgsDataItem *item = pr->createDataItem( QString(), nullptr );  // empty path -> top level
+  if ( item )
+  {
+    // make sure the top level key is always set
+    item->setProviderKey( pr->name() );
+    // Forward the signal from the root items to the model (and then to the app)
+    connect( item, &QgsDataItem::connectionsChanged, this, &QgsBrowserModel::onConnectionsChanged );
+    QgsDebugMsgLevel( "Add new top level item : " + item->name(), 4 );
+    setupItemConnections( item );
+  }
+  return item;
+}

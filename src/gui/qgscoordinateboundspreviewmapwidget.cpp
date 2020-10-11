@@ -31,10 +31,10 @@ QgsCoordinateBoundsPreviewMapWidget::QgsCoordinateBoundsPreviewMapWidget( QWidge
   mCanvasCenterMarker->setColor( QColor( 185, 84, 210 ) );
   mCanvasCenterMarker->setPenWidth( 3 );
 
-  QgsCoordinateReferenceSystem srs( 4326, QgsCoordinateReferenceSystem::EpsgCrsId );
+  QgsCoordinateReferenceSystem srs( QStringLiteral( "EPSG:4326" ) );
   setDestinationCrs( srs );
 
-  QString layerPath = QgsApplication::pkgDataPath() + QStringLiteral( "/resources/data/world_map.shp" );
+  QString layerPath = QgsApplication::pkgDataPath() + QStringLiteral( "/resources/data/world_map.gpkg|layername=countries" );
   mLayers << new QgsVectorLayer( layerPath );
   setLayers( mLayers );
   setMapTool( new QgsMapToolPan( this ) );

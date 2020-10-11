@@ -59,7 +59,7 @@ QgsGeometryCheckerFixSummaryDialog::QgsGeometryCheckerFixSummaryDialog( const St
   setupTable( ui.tableWidgetNotFixed );
   setupTable( ui.tableWidgetObsoleteErrors );
 
-  ui.plainTextEditMessages->setPlainText( checker->getMessages().join( QStringLiteral( "\n" ) ) );
+  ui.plainTextEditMessages->setPlainText( checker->getMessages().join( QLatin1Char( '\n' ) ) );
 
   ui.groupBoxFixedErrors->setVisible( !stats.fixedErrors.isEmpty() );
   ui.groupBoxNewErrors->setVisible( !stats.newErrors.isEmpty() );
@@ -98,9 +98,9 @@ void QgsGeometryCheckerFixSummaryDialog::setupTable( QTableWidget *table )
 {
   table->resizeColumnToContents( 0 );
   table->resizeColumnToContents( 1 );
-  table->horizontalHeader()->setResizeMode( 2, QHeaderView::Stretch );
-  table->horizontalHeader()->setResizeMode( 3, QHeaderView::Stretch );
-  table->horizontalHeader()->setResizeMode( 4, QHeaderView::Stretch );
+  table->horizontalHeader()->setSectionResizeMode( 2, QHeaderView::Stretch );
+  table->horizontalHeader()->setSectionResizeMode( 3, QHeaderView::Stretch );
+  table->horizontalHeader()->setSectionResizeMode( 4, QHeaderView::Stretch );
   table->setEditTriggers( QAbstractItemView::NoEditTriggers );
   table->setSelectionBehavior( QAbstractItemView::SelectRows );
   table->setSelectionMode( QAbstractItemView::SingleSelection );

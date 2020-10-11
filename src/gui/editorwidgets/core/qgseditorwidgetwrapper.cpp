@@ -96,6 +96,12 @@ void QgsEditorWidgetWrapper::emitValueChanged()
   emit valuesChanged( value(), additionalFieldValues() );
 }
 
+void QgsEditorWidgetWrapper::parentFormValueChanged( const QString &attribute, const QVariant &value )
+{
+  Q_UNUSED( attribute )
+  Q_UNUSED( value )
+}
+
 void QgsEditorWidgetWrapper::updateConstraintWidgetStatus()
 {
   if ( !mConstraintResultVisible )
@@ -131,7 +137,7 @@ void QgsEditorWidgetWrapper::updateValues( const QVariant &value, const QVariant
   // this method should be made pure virtual in QGIS 4
   Q_UNUSED( additionalValues );
   Q_NOWARN_DEPRECATED_PUSH
-  // avoid infinte recursive loop
+  // avoid infinite recursive loop
   if ( !isRunningDeprecatedSetValue )
     setValue( value );
   Q_NOWARN_DEPRECATED_POP
@@ -235,16 +241,16 @@ void QgsEditorWidgetWrapper::updateConstraint( const QgsVectorLayer *layer, int 
   mValidConstraint = hardConstraintsOk && softConstraintsOk;
   mIsBlockingCommit = !hardConstraintsOk;
 
-  mConstraintFailureReason = errors.join( QStringLiteral( ", " ) );
+  mConstraintFailureReason = errors.join( QLatin1String( ", " ) );
 
   if ( toEmit )
   {
     QString errStr = errors.isEmpty() ? tr( "Constraint checks passed" ) : mConstraintFailureReason;
 
-    QString description = descriptions.join( QStringLiteral( ", " ) );
+    QString description = descriptions.join( QLatin1String( ", " ) );
     QString expressionDesc;
     if ( expressions.size() > 1 )
-      expressionDesc = "( " + expressions.join( QStringLiteral( " ) AND ( " ) ) + " )";
+      expressionDesc = "( " + expressions.join( QLatin1String( " ) AND ( " ) ) + " )";
     else if ( !expressions.isEmpty() )
       expressionDesc = expressions.at( 0 );
 
@@ -266,6 +272,7 @@ bool QgsEditorWidgetWrapper::isBlockingCommit() const
 {
   return mIsBlockingCommit;
 }
+
 
 QString QgsEditorWidgetWrapper::constraintFailureReason() const
 {

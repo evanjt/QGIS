@@ -100,7 +100,7 @@ QWidget *QgsAuthOAuth2Edit::parentWidget() const
   const QMetaObject *metaObject = window()->metaObject();
   QString parentclass = metaObject->className();
   //QgsDebugMsg( QStringLiteral( "parent class: %1" ).arg( parentclass ) );
-  if ( parentclass != QStringLiteral( "QgsAuthConfigEdit" ) )
+  if ( parentclass != QLatin1String( "QgsAuthConfigEdit" ) )
   {
     QgsDebugMsg( QStringLiteral( "Parent widget not QgsAuthConfigEdit instance" ) );
     return nullptr;
@@ -798,8 +798,8 @@ void QgsAuthOAuth2Edit::exportOAuthConfig()
     QgsDebugMsg( QStringLiteral( "FAILED to export OAuth2 config file" ) );
   }
   // clear temp changes
-  mOAuthConfigCustom->setId( QString::null );
-  mOAuthConfigCustom->setName( QString::null );
+  mOAuthConfigCustom->setId( QString() );
+  mOAuthConfigCustom->setName( QString() );
 }
 
 
@@ -993,7 +993,7 @@ void QgsAuthOAuth2Edit::parseSoftwareStatement( const QString &path )
     if ( !grantTypes.isEmpty( ) )
     {
       QString grantType = grantTypes[0];
-      if ( grantType == QLatin1Literal( "authorization_code" ) )
+      if ( grantType == QLatin1String( "authorization_code" ) )
       {
         updateGrantFlow( static_cast<int>( QgsAuthOAuth2Config::AuthCode ) );
       }
@@ -1120,10 +1120,10 @@ void QgsAuthOAuth2Edit::registerSoftStatement( const QString &registrationUrl )
   QByteArray json = QJsonWrapper::toJson( QVariant( mSoftwareStatement ), &res, &errStr );
   QNetworkRequest registerRequest( regUrl );
   QgsSetRequestInitiatorClass( registerRequest, QStringLiteral( "QgsAuthOAuth2Edit" ) );
-  registerRequest.setHeader( QNetworkRequest::ContentTypeHeader, QLatin1Literal( "application/json" ) );
+  registerRequest.setHeader( QNetworkRequest::ContentTypeHeader, QLatin1String( "application/json" ) );
   QNetworkReply *registerReply;
   // For testability: use GET if protocol is file://
-  if ( regUrl.scheme() == QLatin1Literal( "file" ) )
+  if ( regUrl.scheme() == QLatin1String( "file" ) )
     registerReply = QgsNetworkAccessManager::instance()->get( registerRequest );
   else
     registerReply = QgsNetworkAccessManager::instance()->post( registerRequest, json );
@@ -1166,7 +1166,7 @@ void QgsAuthOAuth2Edit::updatePredefinedLocationsTooltip()
     locationListHtml += QStringLiteral( "<li><a href=\"%1\">%2</a></li>" ).arg( QUrl::fromLocalFile( dir ).toString(), dir );
   }
   if ( !locationListHtml.isEmpty() )
-    locationListHtml += QStringLiteral( "</ul>" );
+    locationListHtml += QLatin1String( "</ul>" );
 
   QString tip = QStringLiteral( "<p>" ) + tr( "Defined configurations are JSON-formatted files, with a single configuration per file. "
                 "This allows configurations to be swapped out via filesystem tools without affecting user "

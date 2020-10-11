@@ -54,7 +54,7 @@ QVariant::Type QgsArcGisRestUtils::mapEsriFieldType( const QString &esriFieldTyp
   if ( esriFieldType == QLatin1String( "esriFieldTypeString" ) )
     return QVariant::String;
   if ( esriFieldType == QLatin1String( "esriFieldTypeDate" ) )
-    return QVariant::Date;
+    return QVariant::DateTime;
   if ( esriFieldType == QLatin1String( "esriFieldTypeGeometry" ) )
     return QVariant::Invalid; // Geometry column should not appear as field
   if ( esriFieldType == QLatin1String( "esriFieldTypeOID" ) )
@@ -171,12 +171,13 @@ std::unique_ptr< QgsCompoundCurve > QgsArcGisRestUtils::parseCompoundCurve( cons
       if ( compoundCurve->curveAt( compoundCurve->nCurves() - 1 )->nCoordinates() < 2 )
         compoundCurve->removeCurve( compoundCurve->nCurves() - 1 );
 
+      const QgsPoint endPointCircularString = circularString->endPoint();
       compoundCurve->addCurve( circularString.release() );
 
       // Prepare a new line string
       lineString = new QgsLineString;
       compoundCurve->addCurve( lineString );
-      lineString->addVertex( circularString->endPoint() );
+      lineString->addVertex( endPointCircularString );
     }
   }
   return compoundCurve;
@@ -395,7 +396,9 @@ QVariantMap QgsArcGisRestUtils::getServiceInfo( const QString &baseurl, const QS
 {
   // http://sampleserver5.arcgisonline.com/arcgis/rest/services/Energy/Geology/FeatureServer?f=json
   QUrl queryUrl( baseurl );
-  queryUrl.addQueryItem( QStringLiteral( "f" ), QStringLiteral( "json" ) );
+  QUrlQuery query( queryUrl );
+  query.addQueryItem( QStringLiteral( "f" ), QStringLiteral( "json" ) );
+  queryUrl.setQuery( query );
   return queryServiceJSON( queryUrl, authcfg, errorTitle, errorText, requestHeaders );
 }
 
@@ -403,7 +406,9 @@ QVariantMap QgsArcGisRestUtils::getLayerInfo( const QString &layerurl, const QSt
 {
   // http://sampleserver5.arcgisonline.com/arcgis/rest/services/Energy/Geology/FeatureServer/1?f=json
   QUrl queryUrl( layerurl );
-  queryUrl.addQueryItem( QStringLiteral( "f" ), QStringLiteral( "json" ) );
+  QUrlQuery query( queryUrl );
+  query.addQueryItem( QStringLiteral( "f" ), QStringLiteral( "json" ) );
+  queryUrl.setQuery( query );
   return queryServiceJSON( queryUrl, authcfg, errorTitle, errorText, requestHeaders );
 }
 
@@ -411,17 +416,19 @@ QVariantMap QgsArcGisRestUtils::getObjectIds( const QString &layerurl, const QSt
 {
   // http://sampleserver5.arcgisonline.com/arcgis/rest/services/Energy/Geology/FeatureServer/1/query?where=1%3D1&returnIdsOnly=true&f=json
   QUrl queryUrl( layerurl + "/query" );
-  queryUrl.addQueryItem( QStringLiteral( "f" ), QStringLiteral( "json" ) );
-  queryUrl.addQueryItem( QStringLiteral( "where" ), QStringLiteral( "1=1" ) );
-  queryUrl.addQueryItem( QStringLiteral( "returnIdsOnly" ), QStringLiteral( "true" ) );
+  QUrlQuery query( queryUrl );
+  query.addQueryItem( QStringLiteral( "f" ), QStringLiteral( "json" ) );
+  query.addQueryItem( QStringLiteral( "where" ), QStringLiteral( "1=1" ) );
+  query.addQueryItem( QStringLiteral( "returnIdsOnly" ), QStringLiteral( "true" ) );
   if ( !bbox.isNull() )
   {
-    queryUrl.addQueryItem( QStringLiteral( "geometry" ), QStringLiteral( "%1,%2,%3,%4" )
-                           .arg( bbox.xMinimum(), 0, 'f', -1 ).arg( bbox.yMinimum(), 0, 'f', -1 )
-                           .arg( bbox.xMaximum(), 0, 'f', -1 ).arg( bbox.yMaximum(), 0, 'f', -1 ) );
-    queryUrl.addQueryItem( QStringLiteral( "geometryType" ), QStringLiteral( "esriGeometryEnvelope" ) );
-    queryUrl.addQueryItem( QStringLiteral( "spatialRel" ), QStringLiteral( "esriSpatialRelEnvelopeIntersects" ) );
+    query.addQueryItem( QStringLiteral( "geometry" ), QStringLiteral( "%1,%2,%3,%4" )
+                        .arg( bbox.xMinimum(), 0, 'f', -1 ).arg( bbox.yMinimum(), 0, 'f', -1 )
+                        .arg( bbox.xMaximum(), 0, 'f', -1 ).arg( bbox.yMaximum(), 0, 'f', -1 ) );
+    query.addQueryItem( QStringLiteral( "geometryType" ), QStringLiteral( "esriGeometryEnvelope" ) );
+    query.addQueryItem( QStringLiteral( "spatialRel" ), QStringLiteral( "esriSpatialRelEnvelopeIntersects" ) );
   }
+  queryUrl.setQuery( query );
   return queryServiceJSON( queryUrl, authcfg, errorTitle, errorText, requestHeaders );
 }
 
@@ -437,45 +444,49 @@ QVariantMap QgsArcGisRestUtils::getObjects( const QString &layerurl, const QStri
     ids.append( QString::number( id ) );
   }
   QUrl queryUrl( layerurl + "/query" );
-  queryUrl.addQueryItem( QStringLiteral( "f" ), QStringLiteral( "json" ) );
-  queryUrl.addQueryItem( QStringLiteral( "objectIds" ), ids.join( QStringLiteral( "," ) ) );
-  QString wkid = crs.indexOf( QLatin1String( ":" ) ) >= 0 ? crs.split( ':' )[1] : QString();
-  queryUrl.addQueryItem( QStringLiteral( "inSR" ), wkid );
-  queryUrl.addQueryItem( QStringLiteral( "outSR" ), wkid );
+  QUrlQuery query( queryUrl );
+  query.addQueryItem( QStringLiteral( "f" ), QStringLiteral( "json" ) );
+  query.addQueryItem( QStringLiteral( "objectIds" ), ids.join( QLatin1Char( ',' ) ) );
+  QString wkid = crs.indexOf( QLatin1Char( ':' ) ) >= 0 ? crs.split( ':' )[1] : QString();
+  query.addQueryItem( QStringLiteral( "inSR" ), wkid );
+  query.addQueryItem( QStringLiteral( "outSR" ), wkid );
 
-  queryUrl.addQueryItem( QStringLiteral( "returnGeometry" ), fetchGeometry ? QStringLiteral( "true" ) : QStringLiteral( "false" ) );
+  query.addQueryItem( QStringLiteral( "returnGeometry" ), fetchGeometry ? QStringLiteral( "true" ) : QStringLiteral( "false" ) );
 
   QString outFields;
   if ( fetchAttributes.isEmpty() )
     outFields = QStringLiteral( "*" );
   else
     outFields = fetchAttributes.join( ',' );
-  queryUrl.addQueryItem( QStringLiteral( "outFields" ), outFields );
+  query.addQueryItem( QStringLiteral( "outFields" ), outFields );
 
-  queryUrl.addQueryItem( QStringLiteral( "returnM" ), fetchM ? QStringLiteral( "true" ) : QStringLiteral( "false" ) );
-  queryUrl.addQueryItem( QStringLiteral( "returnZ" ), fetchZ ? QStringLiteral( "true" ) : QStringLiteral( "false" ) );
+  query.addQueryItem( QStringLiteral( "returnM" ), fetchM ? QStringLiteral( "true" ) : QStringLiteral( "false" ) );
+  query.addQueryItem( QStringLiteral( "returnZ" ), fetchZ ? QStringLiteral( "true" ) : QStringLiteral( "false" ) );
   if ( !filterRect.isNull() )
   {
-    queryUrl.addQueryItem( QStringLiteral( "geometry" ), QStringLiteral( "%1,%2,%3,%4" )
-                           .arg( filterRect.xMinimum(), 0, 'f', -1 ).arg( filterRect.yMinimum(), 0, 'f', -1 )
-                           .arg( filterRect.xMaximum(), 0, 'f', -1 ).arg( filterRect.yMaximum(), 0, 'f', -1 ) );
-    queryUrl.addQueryItem( QStringLiteral( "geometryType" ), QStringLiteral( "esriGeometryEnvelope" ) );
-    queryUrl.addQueryItem( QStringLiteral( "spatialRel" ), QStringLiteral( "esriSpatialRelEnvelopeIntersects" ) );
+    query.addQueryItem( QStringLiteral( "geometry" ), QStringLiteral( "%1,%2,%3,%4" )
+                        .arg( filterRect.xMinimum(), 0, 'f', -1 ).arg( filterRect.yMinimum(), 0, 'f', -1 )
+                        .arg( filterRect.xMaximum(), 0, 'f', -1 ).arg( filterRect.yMaximum(), 0, 'f', -1 ) );
+    query.addQueryItem( QStringLiteral( "geometryType" ), QStringLiteral( "esriGeometryEnvelope" ) );
+    query.addQueryItem( QStringLiteral( "spatialRel" ), QStringLiteral( "esriSpatialRelEnvelopeIntersects" ) );
   }
+  queryUrl.setQuery( query );
   return queryServiceJSON( queryUrl,  authcfg, errorTitle, errorText, requestHeaders, feedback );
 }
 
 QList<quint32> QgsArcGisRestUtils::getObjectIdsByExtent( const QString &layerurl, const QgsRectangle &filterRect, QString &errorTitle, QString &errorText, const QString &authcfg, const QgsStringMap &requestHeaders, QgsFeedback *feedback )
 {
   QUrl queryUrl( layerurl + "/query" );
-  queryUrl.addQueryItem( QStringLiteral( "f" ), QStringLiteral( "json" ) );
-  queryUrl.addQueryItem( QStringLiteral( "where" ), QStringLiteral( "1=1" ) );
-  queryUrl.addQueryItem( QStringLiteral( "returnIdsOnly" ), QStringLiteral( "true" ) );
-  queryUrl.addQueryItem( QStringLiteral( "geometry" ), QStringLiteral( "%1,%2,%3,%4" )
-                         .arg( filterRect.xMinimum(), 0, 'f', -1 ).arg( filterRect.yMinimum(), 0, 'f', -1 )
-                         .arg( filterRect.xMaximum(), 0, 'f', -1 ).arg( filterRect.yMaximum(), 0, 'f', -1 ) );
-  queryUrl.addQueryItem( QStringLiteral( "geometryType" ), QStringLiteral( "esriGeometryEnvelope" ) );
-  queryUrl.addQueryItem( QStringLiteral( "spatialRel" ), QStringLiteral( "esriSpatialRelEnvelopeIntersects" ) );
+  QUrlQuery query( queryUrl );
+  query.addQueryItem( QStringLiteral( "f" ), QStringLiteral( "json" ) );
+  query.addQueryItem( QStringLiteral( "where" ), QStringLiteral( "1=1" ) );
+  query.addQueryItem( QStringLiteral( "returnIdsOnly" ), QStringLiteral( "true" ) );
+  query.addQueryItem( QStringLiteral( "geometry" ), QStringLiteral( "%1,%2,%3,%4" )
+                      .arg( filterRect.xMinimum(), 0, 'f', -1 ).arg( filterRect.yMinimum(), 0, 'f', -1 )
+                      .arg( filterRect.xMaximum(), 0, 'f', -1 ).arg( filterRect.yMaximum(), 0, 'f', -1 ) );
+  query.addQueryItem( QStringLiteral( "geometryType" ), QStringLiteral( "esriGeometryEnvelope" ) );
+  query.addQueryItem( QStringLiteral( "spatialRel" ), QStringLiteral( "esriSpatialRelEnvelopeIntersects" ) );
+  queryUrl.setQuery( query );
   const QVariantMap objectIdData = queryServiceJSON( queryUrl, authcfg, errorTitle, errorText, requestHeaders, feedback );
 
   if ( objectIdData.isEmpty() )
@@ -838,21 +849,21 @@ QgsAbstractVectorLayerLabeling *QgsArcGisRestUtils::parseEsriLabeling( const QVa
               placement == QLatin1String( "esriServerLinePlacementAboveAlong" ) )
     {
       settings->placement = QgsPalLayerSettings::Line;
-      settings->placementFlags = QgsPalLayerSettings::AboveLine | QgsPalLayerSettings::MapOrientation;
+      settings->lineSettings().setPlacementFlags( QgsLabeling::LinePlacementFlag::AboveLine | QgsLabeling::LinePlacementFlag::MapOrientation );
     }
     else if ( placement == QLatin1String( "esriServerLinePlacementBelowAfter" ) ||
               placement == QLatin1String( "esriServerLinePlacementBelowStart" ) ||
               placement == QLatin1String( "esriServerLinePlacementBelowAlong" ) )
     {
       settings->placement = QgsPalLayerSettings::Line;
-      settings->placementFlags = QgsPalLayerSettings::BelowLine | QgsPalLayerSettings::MapOrientation;
+      settings->lineSettings().setPlacementFlags( QgsLabeling::LinePlacementFlag::BelowLine | QgsLabeling::LinePlacementFlag::MapOrientation );
     }
     else if ( placement == QLatin1String( "esriServerLinePlacementCenterAfter" ) ||
               placement == QLatin1String( "esriServerLinePlacementCenterStart" ) ||
               placement == QLatin1String( "esriServerLinePlacementCenterAlong" ) )
     {
       settings->placement = QgsPalLayerSettings::Line;
-      settings->placementFlags = QgsPalLayerSettings::OnLine | QgsPalLayerSettings::MapOrientation;
+      settings->lineSettings().setPlacementFlags( QgsLabeling::LinePlacementFlag::OnLine | QgsLabeling::LinePlacementFlag::MapOrientation );
     }
     else if ( placement == QLatin1String( "esriServerPolygonPlacementAlwaysHorizontal" ) )
     {
@@ -1079,7 +1090,7 @@ QUrl QgsArcGisRestUtils::parseUrl( const QUrl &url )
     QString modifiedUrlString = modifiedUrl.toString();
     // Qt5 does URL encoding from some reason (of the FILTER parameter for example)
     modifiedUrlString = QUrl::fromPercentEncoding( modifiedUrlString.toUtf8() );
-    modifiedUrlString.replace( QStringLiteral( "fake_qgis_http_endpoint/" ), QStringLiteral( "fake_qgis_http_endpoint_" ) );
+    modifiedUrlString.replace( QLatin1String( "fake_qgis_http_endpoint/" ), QLatin1String( "fake_qgis_http_endpoint_" ) );
     QgsDebugMsg( QStringLiteral( "Get %1" ).arg( modifiedUrlString ) );
     modifiedUrlString = modifiedUrlString.mid( QStringLiteral( "http://" ).size() );
     QString args = modifiedUrlString.mid( modifiedUrlString.indexOf( '?' ) );
@@ -1277,7 +1288,7 @@ void QgsArcGisRestUtils::adjustBaseUrl( QString &baseUrl, const QString name )
       checkString += QString( '/' );
 
     checkString += part;
-    if ( baseUrl.indexOf( QRegularExpression( checkString.replace( '/', QStringLiteral( "\\/" ) ) + QStringLiteral( "\\/?$" ) ) ) > -1 )
+    if ( baseUrl.indexOf( QRegularExpression( checkString.replace( '/', QLatin1String( "\\/" ) ) + QStringLiteral( "\\/?$" ) ) ) > -1 )
     {
       baseUrl = baseUrl.left( baseUrl.length() - checkString.length() - 1 );
       break;
@@ -1290,7 +1301,7 @@ void QgsArcGisRestUtils::visitFolderItems( const std::function< void( const QStr
   QString base( baseUrl );
   bool baseChecked = false;
   if ( !base.endsWith( '/' ) )
-    base += QStringLiteral( "/" );
+    base += QLatin1Char( '/' );
 
   const QStringList folderList = serviceData.value( QStringLiteral( "folders" ) ).toStringList();
   for ( const QString &folder : folderList )
@@ -1309,7 +1320,7 @@ void QgsArcGisRestUtils::visitServiceItems( const std::function< void( const QSt
   QString base( baseUrl );
   bool baseChecked = false;
   if ( !base.endsWith( '/' ) )
-    base += QStringLiteral( "/" );
+    base += QLatin1Char( '/' );
 
   const QVariantList serviceList = serviceData.value( QStringLiteral( "services" ) ).toList();
   for ( const QVariant &service : serviceList )

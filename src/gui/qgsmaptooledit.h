@@ -44,6 +44,16 @@ class GUI_EXPORT QgsMapToolEdit: public QgsMapTool
      */
     double defaultZValue() const;
 
+  private slots:
+    //! Vector layers' editingStopped SIGNAL will eventually trigger a clean
+    void connectLayers( const QList<QgsMapLayer *> &layers );
+
+    /**
+     * Makes sure rubber bands are removed if there
+     * is no editable layer left in the project
+     */
+    void cleanCanvas();
+
   protected:
 
     //! Returns stroke color for rubber bands (from global settings)
@@ -78,8 +88,9 @@ class GUI_EXPORT QgsMapToolEdit: public QgsMapTool
     /**
      * Adds a list of \a vertices to other features to keep topology up to date, e.g. to neighbouring polygons.
      * The \a vertices list specifies a set of topological points to add, in the layer's coordinate reference system.
+     * \deprecated since QGIS 3.12 - will be removed in QGIS 4.0. Use the variant which accepts QgsPoint objects instead of QgsPointXY.
      */
-    TopologicalResult addTopologicalPoints( const QVector<QgsPointXY> &vertices );
+    Q_DECL_DEPRECATED TopologicalResult addTopologicalPoints( const QVector<QgsPointXY> &vertices )  SIP_DEPRECATED;
 
     /**
      * Adds a list of \a vertices to other features to keep topology up to date, e.g. to neighbouring polygons.
@@ -92,6 +103,10 @@ class GUI_EXPORT QgsMapToolEdit: public QgsMapTool
     void notifyNotVectorLayer();
     //! Display a timed message bar noting the active vector layer is not editable.
     void notifyNotEditableLayer();
+
+  private:
+    //! Returns a list of layers filtered to just editable spatial vector layers
+    QList<QgsVectorLayer *> editableVectorLayers();
 };
 
 #endif

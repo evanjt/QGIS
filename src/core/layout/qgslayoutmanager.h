@@ -113,7 +113,7 @@ class CORE_EXPORT QgsLayoutManager : public QObject
     /**
      * Duplicates an existing \a layout from the manager. The new
      * layout will automatically be stored in the manager.
-     * Returns new the layout if duplication was successful.
+     * Returns the new layout if duplication was successful.
      */
     QgsMasterLayoutInterface *duplicateLayout( const QgsMasterLayoutInterface *layout, const QString &newName );
 
@@ -271,9 +271,30 @@ class CORE_EXPORT QgsLayoutManagerProxyModel : public QSortFilterProxyModel
      */
     void setFilters( QgsLayoutManagerProxyModel::Filters filters );
 
+    /**
+     * Returns the current filter string, if set.
+     *
+     * \see setFilterString()
+     * \since QGIS 3.12
+     */
+    QString filterString() const { return mFilterString; }
+
+  public slots:
+
+    /**
+     * Sets a \a filter string, such that only layouts with names containing the
+     * specified string will be shown.
+     *
+     * \see filterString()
+     * \since QGIS 3.12
+    */
+    void setFilterString( const QString &filter );
+
   private:
 
     Filters mFilters = Filters( FilterPrintLayouts | FilterReports );
+
+    QString mFilterString;
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS( QgsLayoutManagerProxyModel::Filters )

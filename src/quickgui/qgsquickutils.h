@@ -43,7 +43,7 @@ class QgsCoordinateReferenceSystem;
 /**
  * \ingroup quick
  *
- * Encapsulating the common utilies for QgsQuick library.
+ * Encapsulating the common utilities for QgsQuick library.
  *
  * \note QML Type: Utils (Singleton)
  *
@@ -252,6 +252,32 @@ class QUICK_EXPORT QgsQuickUtils: public QObject
      * \since QGIS 3.10
      */
     Q_INVOKABLE static QString evaluateExpression( const QgsQuickFeatureLayerPair &pair, QgsProject *activeProject, const QString &expression );
+
+    /**
+     * Selects features in a layer
+     * This method is required since QML cannot perform the conversion of a feature ID to a QgsFeatureId (i.e. a qint64)
+     * \param layer the vector layer
+     * \param fids the list of feature IDs
+     * \param behavior the selection behavior
+     *
+     * \since QGIS 3.12
+     */
+    Q_INVOKABLE static void selectFeaturesInLayer( QgsVectorLayer *layer, const QList<int> &fids, QgsVectorLayer::SelectBehavior behavior = QgsVectorLayer::SetSelection );
+
+
+    /**
+    * Returns the QVariant typeName of a \a field.
+    * This is a stable identifier (compared to the provider field name).
+    * \param field QgsField
+    */
+    Q_INVOKABLE static QString fieldType( const QgsField &field );
+
+
+    /**
+    * Returns field format's name for given string representing field format defined in QgsDateTimeFieldFormatter.
+    * \param fieldFormat string representing formats from QgsDateTimeFieldFormatter.
+    */
+    Q_INVOKABLE static QString dateTimeFieldFormat( const QString &fieldFormat );
 
   private:
     static void formatToMetricDistance( double srcDistance,

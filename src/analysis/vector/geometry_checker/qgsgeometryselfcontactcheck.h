@@ -25,6 +25,7 @@
  */
 class ANALYSIS_EXPORT QgsGeometrySelfContactCheck : public QgsSingleGeometryCheck
 {
+    Q_DECLARE_TR_FUNCTIONS( QgsGeometrySelfContactCheck )
   public:
     QgsGeometrySelfContactCheck( QgsGeometryCheckContext *context, const QVariantMap &configuration )
       : QgsSingleGeometryCheck( context, configuration ) {}
@@ -33,7 +34,7 @@ class ANALYSIS_EXPORT QgsGeometrySelfContactCheck : public QgsSingleGeometryChec
     QList<QgsWkbTypes::GeometryType> compatibleGeometryTypes() const override { return factoryCompatibleGeometryTypes(); }
     QList<QgsSingleGeometryCheckError *> processGeometry( const QgsGeometry &geometry ) const override;
     void fixError( const QMap<QString, QgsFeaturePool *> &featurePools, QgsGeometryCheckError *error, int method, const QMap<QString, int> &mergeAttributeIndices, Changes & ) const override;
-    QStringList resolutionMethods() const override;
+    Q_DECL_DEPRECATED QStringList resolutionMethods() const override;
     static QString factoryDescription() { return tr( "Self contact" ); }
     QString description() const override { return factoryDescription(); }
     static QString factoryId() { return QStringLiteral( "QgsGeometrySelfContactCheck" ); }

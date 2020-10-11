@@ -41,22 +41,21 @@ struct CORE_EXPORT QgsRasterViewPort
 
   /**
    * \brief Coordinate (in output device coordinate system) of top left corner
-   *   of the part of the raster that is to be rendered.*/
+   * of the part of the raster that is to be rendered.
+  */
   QgsPointXY mTopLeftPoint;
 
   /**
    * \brief Coordinate (in output device coordinate system) of bottom right corner
-   *   of the part of the raster that is to be rendered.*/
+   * of the part of the raster that is to be rendered.
+  */
   QgsPointXY mBottomRightPoint;
 
   //! \brief Width, number of columns to be rendered
-  int mWidth;
+  qgssize mWidth;
 
-  /**
-   * \brief Distance in map units from bottom edge to top edge for the part of
-   *  the raster that is to be rendered.*/
   //! \brief Height, number of rows to be rendered
-  int mHeight;
+  qgssize mHeight;
 
   //! \brief Intersection of current map extent and layer extent
   QgsRectangle mDrawnExtent;

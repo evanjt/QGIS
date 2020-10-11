@@ -94,6 +94,15 @@ namespace QgsWms
        */
       QImage *getLegendGraphics( QgsLayerTreeModelLegendNode &nodeModel );
 
+      /**
+       * Returns the map legend as a JSON object. The caller takes the ownership
+       * of the JSON object.
+       * \param model The layer tree model to use for building the legend
+       * \returns the legend as a JSON object
+       * \since QGIS 3.12
+       */
+      QJsonObject getLegendGraphicsAsJson( QgsLayerTreeModel &model );
+
       typedef QSet<QString> SymbolSet;
       typedef QHash<QgsVectorLayer *, SymbolSet> HitTest;
 
@@ -115,11 +124,12 @@ namespace QgsWms
        * \returns the map as DXF data
        * \since QGIS 3.0
       */
-      QgsDxfExport getDxf();
+      std::unique_ptr<QgsDxfExport> getDxf();
 
       /**
        * Returns printed page as binary
-        \returns printed page as binary or 0 in case of error*/
+       * \returns printed page as binary or 0 in case of error
+      */
       QByteArray getPrint();
 
       /**
@@ -128,14 +138,16 @@ namespace QgsWms
        */
       QByteArray getFeatureInfo( const QString &version = "1.3.0" );
 
+      /**
+       * Configures \a layers for rendering optionally considering the map \a settings
+       */
+      void configureLayers( QList<QgsMapLayer *> &layers, QgsMapSettings *settings = nullptr );
+
     private:
       QgsLegendSettings legendSettings() const;
 
       // Build and returns highlight layers
       QList<QgsMapLayer *> highlightLayers( QList<QgsWmsParametersHighlightLayer> params );
-
-      // Build and returns external layers
-      QList<QgsMapLayer *> externalLayers( const QList<QgsWmsParametersExternalLayer> &params );
 
       // Rendering step for layers
       QPainter *layersRendering( const QgsMapSettings &mapSettings, QImage &image ) const;
@@ -146,8 +158,10 @@ namespace QgsWms
       // Set layer opacity
       void setLayerOpacity( QgsMapLayer *layer, int opacity ) const;
 
-      // Set layer filter
+      // Set layer filter and dimension
       void setLayerFilter( QgsMapLayer *layer, const QList<QgsWmsParametersFilter> &filters );
+
+      QStringList dimensionFilter( QgsVectorLayer *layer ) const;
 
       // Set layer python filter
       void setLayerAccessControlFilter( QgsMapLayer *layer ) const;
@@ -222,7 +236,8 @@ namespace QgsWms
 
       /**
        * Tests if a filter sql string is allowed (safe)
-        \returns true in case of success, false if string seems unsafe*/
+       * \returns true in case of success, false if string seems unsafe
+      */
       bool testFilterStringSafety( const QString &filter ) const;
       //! Helper function for filter safety test. Groups stringlist to merge entries starting/ending with quotes
       static void groupStringList( QStringList &list, const QString &groupString );
@@ -255,20 +270,18 @@ namespace QgsWms
       //! Gets layer search rectangle (depending on request parameter, layer type, map and layer crs)
       QgsRectangle featureInfoSearchRect( QgsVectorLayer *ml, const QgsMapSettings &ms, const QgsRenderContext &rct, const QgsPointXY &infoPoint ) const;
 
-      /*
+      /**
        * Configures the print layout for the GetPrint request
        *\param c the print layout
        *\param mapSettings the map settings
        *\param atlasPrint true if atlas is used for printing
        *\returns true in case of success
-       * */
+       */
       bool configurePrintLayout( QgsPrintLayout *c, const QgsMapSettings &mapSettings, bool atlasPrint = false );
 
       void removeTemporaryLayers();
 
       void handlePrintErrors( const QgsLayout *layout ) const;
-
-      void configureLayers( QList<QgsMapLayer *> &layers, QgsMapSettings *settings = nullptr );
 
       void setLayerStyle( QgsMapLayer *layer, const QString &style ) const;
 
@@ -280,7 +293,7 @@ namespace QgsWms
 
       const QgsProject *mProject = nullptr;
       QList<QgsMapLayer *> mTemporaryLayers;
-      QgsWmsRenderContext mContext;
+      const QgsWmsRenderContext &mContext;
   };
 
 } // namespace QgsWms

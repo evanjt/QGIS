@@ -61,6 +61,7 @@ Item {
   property var galleryIcon: customStyle.icons.gallery
   property var brokenImageIcon: customStyle.icons.brokenImage
   property var notAvailableImageIcon: customStyle.icons.notAvailable
+  property var backIcon: customStyle.icons.back
   property real iconSize:  customStyle.fields.height
   property real textMargin: QgsQuick.Utils.dp * 10
   /**
@@ -115,6 +116,22 @@ Item {
 
   function getAbsolutePath(prefix, pathFromValue) {
     return (prefix) ? prefix + "/" + pathFromValue : pathFromValue
+  }
+
+  function showDefaultPanel() {
+    if (!photoCapturePanelLoader.item) {
+      // Load the photo capture panel if not loaded yet
+      photoCapturePanelLoader.setSource("qgsquickphotopanel.qml")
+      photoCapturePanelLoader.item.height = window.height
+      photoCapturePanelLoader.item.width = window.width
+      photoCapturePanelLoader.item.edge = Qt.RightEdge
+      photoCapturePanelLoader.item.imageButtonSize = fieldItem.iconSize
+      photoCapturePanelLoader.item.backButtonSource = fieldItem.backIcon
+    }
+    photoCapturePanelLoader.item.visible = true
+    photoCapturePanelLoader.item.targetDir = targetDir
+    photoCapturePanelLoader.item.prefixToRelativePath = prefixToRelativePath
+    photoCapturePanelLoader.item.fieldItem = fieldItem
   }
 
   id: fieldItem
@@ -175,8 +192,6 @@ Item {
         image.source = image.getSource()
       }
 
-      Component.onCompleted: image.source = getSource()
-
       function getSource() {
         var absolutePath = getAbsolutePath(prefixToRelativePath, image.currentValue)
         if (image.status === Image.Error) {
@@ -185,14 +200,14 @@ Item {
         }
         else if (image.currentValue && QgsQuick.Utils.fileExists(absolutePath)) {
           fieldItem.state = "valid"
-          return absolutePath
+          return "file://" + absolutePath
         }
         else if (!image.currentValue) {
           fieldItem.state = "notSet"
           return ""
         }
         fieldItem.state = "notAvailable"
-        return absolutePath
+        return "file://" + absolutePath
       }
     }
   }
@@ -260,19 +275,11 @@ Item {
         MouseArea {
           anchors.fill: parent
           onClicked: {
-            var photoCapturePanel = photoCapturePanelLoader.item
-            if (!photoCapturePanelLoader.item) {
-              // Load the photo capture panel if not loaded yet
-              photoCapturePanelLoader.setSource("qgsquickphotopanel.qml")
-              photoCapturePanelLoader.item.height = window.height
-              photoCapturePanelLoader.item.width = window.width
-              photoCapturePanelLoader.item.edge = Qt.RightEdge
-              photoCapturePanelLoader.item.imageButtonSize = fieldItem.iconSize
+            if (externalResourceHandler.capturePhoto) {
+              externalResourceHandler.capturePhoto(fieldItem)
+            } else {
+              showDefaultPanel()
             }
-            photoCapturePanelLoader.item.visible = true
-            photoCapturePanelLoader.item.targetDir = targetDir
-            photoCapturePanelLoader.item.prefixToRelativePath = prefixToRelativePath
-            photoCapturePanelLoader.item.fieldItem = fieldItem
           }
         }
       }

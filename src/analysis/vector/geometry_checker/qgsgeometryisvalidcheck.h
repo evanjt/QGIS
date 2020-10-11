@@ -53,6 +53,7 @@ class ANALYSIS_EXPORT QgsGeometryIsValidCheckError : public QgsSingleGeometryChe
  */
 class ANALYSIS_EXPORT QgsGeometryIsValidCheck : public QgsSingleGeometryCheck
 {
+    Q_DECLARE_TR_FUNCTIONS( QgsGeometryIsValidCheck )
   public:
 
     /**
@@ -62,7 +63,7 @@ class ANALYSIS_EXPORT QgsGeometryIsValidCheck : public QgsSingleGeometryCheck
 
     QList<QgsWkbTypes::GeometryType> compatibleGeometryTypes() const override;
     QList<QgsSingleGeometryCheckError *> processGeometry( const QgsGeometry &geometry ) const override;
-    QStringList resolutionMethods() const override;
+    Q_DECL_DEPRECATED QStringList resolutionMethods() const override;
     QString description() const override { return factoryDescription(); }
     QString id() const override { return factoryId(); }
     QgsGeometryCheck::CheckType checkType() const override { return factoryCheckType(); }

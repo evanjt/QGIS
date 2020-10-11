@@ -60,6 +60,8 @@ QString QgsTerrainGenerator::typeToString( QgsTerrainGenerator::Type type )
 {
   switch ( type )
   {
+    case QgsTerrainGenerator::Mesh:
+      return QStringLiteral( "mesh" );
     case QgsTerrainGenerator::Flat:
       return QStringLiteral( "flat" );
     case QgsTerrainGenerator::Dem:
@@ -68,4 +70,9 @@ QString QgsTerrainGenerator::typeToString( QgsTerrainGenerator::Type type )
       return QStringLiteral( "online" );
   }
   return QString();
+}
+
+bool QgsTerrainGenerator::isValid() const
+{
+  return mIsValid;
 }

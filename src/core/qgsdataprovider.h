@@ -31,6 +31,7 @@
 
 class QgsRectangle;
 class QgsCoordinateReferenceSystem;
+class QgsDataProviderTemporalCapabilities;
 
 
 /**
@@ -102,15 +103,32 @@ class CORE_EXPORT QgsDataProvider : public QObject
      */
     struct ProviderOptions
     {
+
+      /**
+       * Coordinate transform context
+       */
       QgsCoordinateTransformContext transformContext;
+
     };
+
+    /**
+     * Flags which control dataprovider construction.
+     * \since QGIS 3.16
+     */
+    enum ReadFlag
+    {
+      FlagTrustDataSource = 1 << 0, //!< Trust datasource config (primary key unicity, geometry type and srid, etc). Improves provider load time by skipping expensive checks like primary key unicity, geometry type and srid and by using estimated metadata on data load. Since QGIS 3.16
+    };
+    Q_DECLARE_FLAGS( ReadFlags, ReadFlag )
 
     /**
      * Create a new dataprovider with the specified in the \a uri.
      *
-     * Additional creation options are specified within the \a options value.
+     * Additional creation options are specified within the \a options value and since QGIS 3.16 creation flags are specified within the \a flags value.
      */
-    QgsDataProvider( const QString &uri = QString(), const QgsDataProvider::ProviderOptions &providerOptions = QgsDataProvider::ProviderOptions() );
+    QgsDataProvider( const QString &uri = QString(),
+                     const QgsDataProvider::ProviderOptions &providerOptions = QgsDataProvider::ProviderOptions(),
+                     QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
     /**
      * Returns the coordinate system for the data source.
@@ -142,7 +160,7 @@ class CORE_EXPORT QgsDataProvider : public QObject
     {
       if ( expandAuthConfig && mDataSourceURI.contains( QLatin1String( "authcfg" ) ) )
       {
-        QgsDataSourceUri uri( mDataSourceURI );
+        const QgsDataSourceUri uri( mDataSourceURI );
         return uri.uri( expandAuthConfig );
       }
       else
@@ -150,6 +168,16 @@ class CORE_EXPORT QgsDataProvider : public QObject
         return mDataSourceURI;
       }
     }
+
+    /**
+     * Returns a short comment for the data that this provider is
+     * providing access to (e.g. the comment for postgres table).
+     *
+     * \note The default implementation returns an empty string.
+     * \since QGIS 3.14
+     */
+    virtual QString dataComment() const { return QString(); };
+
 
     /**
      * Set the data source specification.
@@ -170,6 +198,24 @@ class CORE_EXPORT QgsDataProvider : public QObject
     {
       return QgsDataSourceUri( mDataSourceURI );
     }
+
+    /**
+     * Returns the provider's temporal capabilities.
+     *
+     * This may be NULLPTR, depending on the data provider.
+     *
+     * \since QGIS 3.14
+     */
+    virtual QgsDataProviderTemporalCapabilities *temporalCapabilities();
+
+    /**
+     * Returns the provider's temporal capabilities.
+     *
+     * This may be NULLPTR, depending on the data provider.
+     *
+     * \since QGIS 3.14
+     */
+    virtual const QgsDataProviderTemporalCapabilities *temporalCapabilities() const SIP_SKIP;
 
     /**
      * Returns the extent of the layer
@@ -238,13 +284,6 @@ class CORE_EXPORT QgsDataProvider : public QObject
     {
       return QStringList();  // Empty
     }
-
-    /**
-     * String sequence used for separating components of sublayers strings.
-     * \see subLayers()
-     * \since QGIS 3.0
-     */
-    static QString SUBLAYER_SEPARATOR;
 
     /**
      * Sub-layer styles for each sub-layer handled by this provider,
@@ -363,10 +402,12 @@ class CORE_EXPORT QgsDataProvider : public QObject
     }
 
     /**
-     * Reloads the data from the source. Needs to be implemented by providers with data caches to
-     * synchronize with changes in the data source
+     * Reloads the data from the source by calling reloadProviderData() implemented
+     * by providers with data caches to synchronize, changes in the data source, feature
+     * counts and other specific actions.
+     * Emits the `dataChanged` signal
      */
-    virtual void reloadData() {}
+    virtual void reloadData();
 
     //! Time stamp of data source in the moment when data/metadata were loaded by provider
     virtual QDateTime timestamp() const { return mTimestamp; }
@@ -546,6 +587,14 @@ class CORE_EXPORT QgsDataProvider : public QObject
      */
     virtual void setTransformContext( const QgsCoordinateTransformContext &transformContext ) SIP_SKIP;
 
+    /**
+     * String sequence used for separating components of sublayers strings.
+     * \note Replaces the static const SUBLAYER_SEPARATOR
+     * \see subLayers()
+     * \since QGIS 3.12
+     */
+    static QString sublayerSeparator();
+
   signals:
 
     /**
@@ -596,6 +645,9 @@ class CORE_EXPORT QgsDataProvider : public QObject
     //! Sets error message
     void setError( const QgsError &error ) { mError = error;}
 
+    //! Read flags. It's up to the subclass to respect these when needed
+    QgsDataProvider::ReadFlags mReadFlags = QgsDataProvider::ReadFlags();
+
   private:
 
     /**
@@ -604,16 +656,22 @@ class CORE_EXPORT QgsDataProvider : public QObject
      */
     QString mDataSourceURI;
 
-    QMap< int, QVariant > mProviderProperties;
-
     QgsDataProvider::ProviderOptions mOptions;
+
+    QMap< int, QVariant > mProviderProperties;
 
     /**
      * Protects options from being accessed concurrently
      */
     mutable QMutex mOptionsMutex;
 
+    /**
+     * Reloads the data according to the provider
+     * \since QGIS 3.12
+    */
+    virtual void reloadProviderData() {}
 };
 
+Q_DECLARE_OPERATORS_FOR_FLAGS( QgsDataProvider::ReadFlags )
 
 #endif

@@ -26,12 +26,13 @@ class QgsSpatialIndex;
 
 class QgsMemoryFeatureIterator;
 
-class QgsMemoryProvider : public QgsVectorDataProvider
+class QgsMemoryProvider final: public QgsVectorDataProvider
 {
     Q_OBJECT
 
   public:
-    explicit QgsMemoryProvider( const QString &uri, const QgsVectorDataProvider::ProviderOptions &coordinateTransformContext );
+    explicit QgsMemoryProvider( const QString &uri, const QgsVectorDataProvider::ProviderOptions &coordinateTransformContext,
+                                QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
     ~QgsMemoryProvider() override;
 
@@ -44,7 +45,8 @@ class QgsMemoryProvider : public QgsVectorDataProvider
      * Creates a new memory provider, with provider properties embedded within the given \a uri and \a options
      * argument.
      */
-    static QgsMemoryProvider *createProvider( const QString &uri, const QgsVectorDataProvider::ProviderOptions &coordinateTransformContext );
+    static QgsMemoryProvider *createProvider( const QString &uri, const QgsVectorDataProvider::ProviderOptions &coordinateTransformContext,
+        QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
     /* Implementation of functions from QgsVectorDataProvider */
 
@@ -56,7 +58,7 @@ class QgsMemoryProvider : public QgsVectorDataProvider
     QgsWkbTypes::Type wkbType() const override;
     long featureCount() const override;
     QgsFields fields() const override;
-    bool addFeatures( QgsFeatureList &flist, QgsFeatureSink::Flags flags = nullptr ) override;
+    bool addFeatures( QgsFeatureList &flist, QgsFeatureSink::Flags flags = QgsFeatureSink::Flags() ) override;
     bool deleteFeatures( const QgsFeatureIds &id ) override;
     bool addAttributes( const QList<QgsField> &attributes ) override;
     bool renameAttributes( const QgsFieldNameMap &renamedAttributes ) override;
@@ -67,6 +69,7 @@ class QgsMemoryProvider : public QgsVectorDataProvider
     bool setSubsetString( const QString &theSQL, bool updateFeatureCount = true ) override;
     bool supportsSubsetString() const override { return true; }
     bool createSpatialIndex() override;
+    QgsFeatureSource::SpatialIndexPresence hasSpatialIndex() const override;
     QgsVectorDataProvider::Capabilities capabilities() const override;
     bool truncate() override;
 

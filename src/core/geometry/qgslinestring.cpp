@@ -175,6 +175,93 @@ QgsLineString::QgsLineString( const QgsLineSegment2D &segment )
   mY[1] = segment.endY();
 }
 
+static double cubicInterpolate( double a, double b,
+                                double A, double B, double C, double D )
+{
+  return A * b * b * b + 3 * B * b * b * a + 3 * C * b * a * a + D * a * a * a;
+}
+
+QgsLineString *QgsLineString::fromBezierCurve( const QgsPoint &start, const QgsPoint &controlPoint1, const QgsPoint &controlPoint2, const QgsPoint &end, int segments )
+{
+  if ( segments == 0 )
+    return new QgsLineString();
+
+  QVector<double> x;
+  x.resize( segments + 1 );
+  QVector<double> y;
+  y.resize( segments + 1 );
+  QVector<double> z;
+  double *zData = nullptr;
+  if ( start.is3D() && end.is3D() && controlPoint1.is3D() && controlPoint2.is3D() )
+  {
+    z.resize( segments + 1 );
+    zData = z.data();
+  }
+  QVector<double> m;
+  double *mData = nullptr;
+  if ( start.isMeasure() && end.isMeasure() && controlPoint1.isMeasure() && controlPoint2.isMeasure() )
+  {
+    m.resize( segments + 1 );
+    mData = m.data();
+  }
+
+  double *xData = x.data();
+  double *yData = y.data();
+  const double step = 1.0 / segments;
+  double a = 0;
+  double b = 1.0;
+  for ( int i = 0; i < segments; i++, a += step, b -= step )
+  {
+    if ( i == 0 )
+    {
+      *xData++ = start.x();
+      *yData++ = start.y();
+      if ( zData )
+        *zData++ = start.z();
+      if ( mData )
+        *mData++ = start.m();
+    }
+    else
+    {
+      *xData++ = cubicInterpolate( a, b, start.x(), controlPoint1.x(), controlPoint2.x(), end.x() );
+      *yData++ = cubicInterpolate( a, b, start.y(), controlPoint1.y(), controlPoint2.y(), end.y() );
+      if ( zData )
+        *zData++ = cubicInterpolate( a, b, start.z(), controlPoint1.z(), controlPoint2.z(), end.z() );
+      if ( mData )
+        *mData++ = cubicInterpolate( a, b, start.m(), controlPoint1.m(), controlPoint2.m(), end.m() );
+    }
+  }
+
+  *xData = end.x();
+  *yData = end.y();
+  if ( zData )
+    *zData = end.z();
+  if ( mData )
+    *mData = end.m();
+
+  return new QgsLineString( x, y, z, m );
+}
+
+QgsLineString *QgsLineString::fromQPolygonF( const QPolygonF &polygon )
+{
+  QVector< double > x;
+  QVector< double > y;
+  x.resize( polygon.count() );
+  y.resize( polygon.count() );
+  double *xData = x.data();
+  double *yData = y.data();
+
+  const QPointF *src = polygon.data();
+  for ( int i  = 0 ; i < polygon.size(); ++ i )
+  {
+    *xData++ = src->x();
+    *yData++ = src->y();
+    src++;
+  }
+
+  return new QgsLineString( x, y );
+}
+
 bool QgsLineString::equals( const QgsCurve &other ) const
 {
   const QgsLineString *otherLine = qgsgeometry_cast< const QgsLineString * >( &other );
@@ -347,14 +434,24 @@ bool QgsLineString::fromWkt( const QString &wkt )
     return false;
   mWkbType = parts.first;
 
-  if ( parts.second == "EMPTY" )
+  QString secondWithoutParentheses = parts.second;
+  secondWithoutParentheses = secondWithoutParentheses.remove( '(' ).remove( ')' ).simplified().remove( ' ' );
+  parts.second = parts.second.remove( '(' ).remove( ')' );
+  if ( ( parts.second.compare( QLatin1String( "EMPTY" ), Qt::CaseInsensitive ) == 0 ) ||
+       secondWithoutParentheses.isEmpty() )
     return true;
 
-  setPoints( QgsGeometryUtils::pointsFromWKT( parts.second, is3D(), isMeasure() ) );
+  QgsPointSequence points = QgsGeometryUtils::pointsFromWKT( parts.second, is3D(), isMeasure() );
+  // There is a non number in the coordinates sequence
+  // LineString ( A b, 1 2)
+  if ( points.isEmpty() )
+    return false;
+
+  setPoints( points );
   return true;
 }
 
-QByteArray QgsLineString::asWkb() const
+QByteArray QgsLineString::asWkb( WkbFlags ) const
 {
   int binarySize = sizeof( char ) + sizeof( quint32 ) + sizeof( quint32 );
   binarySize += numPoints() * ( 2 + is3D() + isMeasure() ) * sizeof( double );
@@ -381,7 +478,7 @@ QString QgsLineString::asWkt( int precision ) const
   QString wkt = wktTypeStr() + ' ';
 
   if ( isEmpty() )
-    wkt += QStringLiteral( "EMPTY" );
+    wkt += QLatin1String( "EMPTY" );
   else
   {
     QgsPointSequence pts;
@@ -429,6 +526,62 @@ json QgsLineString::asJsonObject( int precision ) const
     {  "type",  "LineString" },
     {  "coordinates",  QgsGeometryUtils::pointsToJson( pts, precision ) }
   };
+}
+
+QString QgsLineString::asKml( int precision ) const
+{
+  QString kml;
+  if ( isRing() )
+  {
+    kml.append( QLatin1String( "<LinearRing>" ) );
+  }
+  else
+  {
+    kml.append( QLatin1String( "<LineString>" ) );
+  }
+  bool z = is3D();
+  kml.append( QLatin1String( "<altitudeMode>" ) );
+  if ( z )
+  {
+    kml.append( QLatin1String( "absolute" ) );
+  }
+  else
+  {
+    kml.append( QLatin1String( "clampToGround" ) );
+  }
+  kml.append( QLatin1String( "</altitudeMode>" ) );
+  kml.append( QLatin1String( "<coordinates>" ) );
+
+  int nPoints = mX.size();
+  for ( int i = 0; i < nPoints; ++i )
+  {
+    if ( i > 0 )
+    {
+      kml.append( QLatin1String( " " ) );
+    }
+    kml.append( qgsDoubleToString( mX[i], precision ) );
+    kml.append( QLatin1String( "," ) );
+    kml.append( qgsDoubleToString( mY[i], precision ) );
+    if ( z )
+    {
+      kml.append( QLatin1String( "," ) );
+      kml.append( qgsDoubleToString( mZ[i], precision ) );
+    }
+    else
+    {
+      kml.append( QLatin1String( ",0" ) );
+    }
+  }
+  kml.append( QLatin1String( "</coordinates>" ) );
+  if ( isRing() )
+  {
+    kml.append( QLatin1String( "</LinearRing>" ) );
+  }
+  else
+  {
+    kml.append( QLatin1String( "</LineString>" ) );
+  }
+  return kml;
 }
 
 /***************************************************************************
@@ -747,26 +900,20 @@ QgsLineString *QgsLineString::reversed() const
   return copy;
 }
 
-QgsPoint *QgsLineString::interpolatePoint( const double distance ) const
+void QgsLineString::visitPointsByRegularDistance( const double distance, const std::function<bool ( double, double, double, double, double, double, double, double, double, double, double, double )> &visitPoint ) const
 {
   if ( distance < 0 )
-    return nullptr;
+    return;
 
   double distanceTraversed = 0;
   const int totalPoints = numPoints();
   if ( totalPoints == 0 )
-    return nullptr;
+    return;
 
   const double *x = mX.constData();
   const double *y = mY.constData();
   const double *z = is3D() ? mZ.constData() : nullptr;
   const double *m = isMeasure() ? mM.constData() : nullptr;
-
-  QgsWkbTypes::Type pointType = QgsWkbTypes::Point;
-  if ( is3D() )
-    pointType = QgsWkbTypes::PointZ;
-  if ( isMeasure() )
-    pointType = QgsWkbTypes::addM( pointType );
 
   double prevX = *x++;
   double prevY = *y++;
@@ -775,9 +922,13 @@ QgsPoint *QgsLineString::interpolatePoint( const double distance ) const
 
   if ( qgsDoubleNear( distance, 0.0 ) )
   {
-    return new QgsPoint( pointType, prevX, prevY, prevZ, prevM );
+    visitPoint( prevX, prevY, prevZ, prevM, prevX, prevY, prevZ, prevM, prevX, prevY, prevZ, prevM );
+    return;
   }
 
+  double pZ = std::numeric_limits<double>::quiet_NaN();
+  double pM = std::numeric_limits<double>::quiet_NaN();
+  double nextPointDistance = distance;
   for ( int i = 1; i < totalPoints; ++i )
   {
     double thisX = *x++;
@@ -786,17 +937,19 @@ QgsPoint *QgsLineString::interpolatePoint( const double distance ) const
     double thisM = m ? *m++ : 0.0;
 
     const double segmentLength = std::sqrt( ( thisX - prevX ) * ( thisX - prevX ) + ( thisY - prevY ) * ( thisY - prevY ) );
-    if ( distance < distanceTraversed + segmentLength || qgsDoubleNear( distance, distanceTraversed + segmentLength ) )
+    while ( nextPointDistance < distanceTraversed + segmentLength || qgsDoubleNear( nextPointDistance, distanceTraversed + segmentLength ) )
     {
       // point falls on this segment - truncate to segment length if qgsDoubleNear test was actually > segment length
-      const double distanceToPoint = std::min( distance - distanceTraversed, segmentLength );
+      const double distanceToPoint = std::min( nextPointDistance - distanceTraversed, segmentLength );
       double pX, pY;
-      double pZ = 0;
-      double pM = 0;
       QgsGeometryUtils::pointOnLineWithDistance( prevX, prevY, thisX, thisY, distanceToPoint, pX, pY,
           z ? &prevZ : nullptr, z ? &thisZ : nullptr, z ? &pZ : nullptr,
           m ? &prevM : nullptr, m ? &thisM : nullptr, m ? &pM : nullptr );
-      return new QgsPoint( pointType, pX, pY, pZ, pM );
+
+      if ( !visitPoint( pX, pY, pZ, pM, prevX, prevY, prevZ, prevM, thisX, thisY, thisZ, thisM ) )
+        return;
+
+      nextPointDistance += distance;
     }
 
     distanceTraversed += segmentLength;
@@ -805,8 +958,26 @@ QgsPoint *QgsLineString::interpolatePoint( const double distance ) const
     prevZ = thisZ;
     prevM = thisM;
   }
+}
 
-  return nullptr;
+QgsPoint *QgsLineString::interpolatePoint( const double distance ) const
+{
+  if ( distance < 0 )
+    return nullptr;
+
+  QgsWkbTypes::Type pointType = QgsWkbTypes::Point;
+  if ( is3D() )
+    pointType = QgsWkbTypes::PointZ;
+  if ( isMeasure() )
+    pointType = QgsWkbTypes::addM( pointType );
+
+  std::unique_ptr< QgsPoint > res;
+  visitPointsByRegularDistance( distance, [ & ]( double x, double y, double z, double m, double, double, double, double, double, double, double, double )->bool
+  {
+    res = qgis::make_unique< QgsPoint >( pointType, x, y, z, m );
+    return false;
+  } );
+  return res.release();
 }
 
 QgsLineString *QgsLineString::curveSubstring( double startDistance, double endDistance ) const
@@ -1017,19 +1188,25 @@ void QgsLineString::transform( const QTransform &t, double zTranslate, double zS
   int nPoints = numPoints();
   bool hasZ = is3D();
   bool hasM = isMeasure();
+  double *x = mX.data();
+  double *y = mY.data();
+  double *z = hasZ ? mZ.data() : nullptr;
+  double *m = hasM ? mM.data() : nullptr;
   for ( int i = 0; i < nPoints; ++i )
   {
-    qreal x, y;
-    t.map( mX.at( i ), mY.at( i ), &x, &y );
-    mX[i] = x;
-    mY[i] = y;
+    double xOut, yOut;
+    t.map( *x, *y, &xOut, &yOut );
+    *x++ = xOut;
+    *y++ = yOut;
     if ( hasZ )
     {
-      mZ[i] = mZ.at( i ) * zScale + zTranslate;
+      *z = *z * zScale + zTranslate;
+      z++;
     }
     if ( hasM )
     {
-      mM[i] = mM.at( i ) * mScale + mTranslate;
+      *m = *m * mScale + mTranslate;
+      m++;
     }
   }
   clearCache();

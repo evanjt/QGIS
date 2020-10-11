@@ -26,6 +26,7 @@ class QgsDiagramLayerSettings;
 
 class QgsFeatureIterator;
 class QgsSingleSymbolRenderer;
+class QgsMapClippingRegion;
 
 #define SIP_NO_FILE
 
@@ -78,14 +79,21 @@ class QgsVectorLayerRenderer : public QgsMapLayerRenderer
     ~QgsVectorLayerRenderer() override;
     QgsFeedback *feedback() const override;
 
+    /**
+     * Returns the feature renderer.
+     * This may be used for tweaking it before the actual rendering of the layer.
+     * \since QGIS 3.12
+     */
+    QgsFeatureRenderer *featureRenderer() SIP_SKIP { return mRenderer; }
+
     bool render() override;
 
   private:
 
     /**
      * Registers label and diagram layer
-      \param layer diagram layer
-      \param attributeNames attributes needed for labeling and diagrams will be added to the list
+     * \param layer diagram layer
+     * \param attributeNames attributes needed for labeling and diagrams will be added to the list
      */
     void prepareLabeling( QgsVectorLayer *layer, QSet<QString> &attributeNames );
     void prepareDiagrams( QgsVectorLayer *layer, QSet<QString> &attributeNames );
@@ -106,8 +114,6 @@ class QgsVectorLayerRenderer : public QgsMapLayerRenderer
 
   protected:
 
-    QgsRenderContext &mContext;
-
     std::unique_ptr< QgsVectorLayerRendererInterruptionChecker > mInterruptionChecker;
 
     //! The rendered layer
@@ -116,6 +122,8 @@ class QgsVectorLayerRenderer : public QgsMapLayerRenderer
     QgsFields mFields; // TODO: use fields from mSource
 
     QgsFeatureIds mSelectedFeatureIds;
+
+    QString mTemporalFilter;
 
     QgsVectorLayerFeatureSource *mSource = nullptr;
 
@@ -151,6 +159,15 @@ class QgsVectorLayerRenderer : public QgsMapLayerRenderer
 
     QgsVectorSimplifyMethod mSimplifyMethod;
     bool mSimplifyGeometry;
+
+    QList< QgsMapClippingRegion > mClippingRegions;
+    QgsGeometry mClipFilterGeom;
+    bool mApplyClipFilter = false;
+    QgsGeometry mClipFeatureGeom;
+    bool mApplyClipGeometries = false;
+    QgsGeometry mLabelClipFeatureGeom;
+    bool mApplyLabelClipGeometries = false;
+
 };
 
 

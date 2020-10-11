@@ -70,7 +70,7 @@ namespace QgsWfs
       QDomDocument doc;
       QString errorMsg;
 
-      if ( doc.setContent( parameters.value( QStringLiteral( "REQUEST_BODY" ) ), true, &errorMsg ) )
+      if ( doc.setContent( request.data(), true, &errorMsg ) )
       {
         QDomElement docElem = doc.documentElement();
         aRequest = parseTransactionRequestBody( docElem, project );
@@ -185,8 +185,8 @@ namespace QgsWfs
       }
       else
       {
-        QString locator = errorLocators.join( QStringLiteral( "; " ) );
-        QString message = errorMessages.join( QStringLiteral( "; " ) );
+        QString locator = errorLocators.join( QLatin1String( "; " ) );
+        QString message = errorMessages.join( QLatin1String( "; " ) );
         if ( errorCount != actionCount )
         {
           addTransactionResult( resp, respElem, QStringLiteral( "PARTIAL" ), locator, message );
@@ -246,7 +246,7 @@ namespace QgsWfs
       for ( int i = 0; i < wfsLayerIds.size(); ++i )
       {
         QgsMapLayer *layer = project->mapLayer( wfsLayerIds.at( i ) );
-        if ( layer->type() != QgsMapLayerType::VectorLayer )
+        if ( !layer || layer->type() != QgsMapLayerType::VectorLayer )
         {
           continue;
         }
@@ -498,17 +498,17 @@ namespace QgsWfs
             }
           }
         }
-#endif
         if ( action.error )
         {
           continue;
         }
+#endif
 
         // Commit the changes of the update elements
         if ( !vlayer->commitChanges() )
         {
           action.error = true;
-          action.errorMsg = QStringLiteral( "Error committing updates: %1" ).arg( vlayer->commitErrors().join( QStringLiteral( "; " ) ) );
+          action.errorMsg = QStringLiteral( "Error committing updates: %1" ).arg( vlayer->commitErrors().join( QLatin1String( "; " ) ) );
           vlayer->rollBack();
           continue;
         }
@@ -626,7 +626,7 @@ namespace QgsWfs
         if ( !vlayer->commitChanges() )
         {
           action.error = true;
-          action.errorMsg = QStringLiteral( "Error committing deletes: %1" ).arg( vlayer->commitErrors().join( QStringLiteral( "; " ) ) );
+          action.errorMsg = QStringLiteral( "Error committing deletes: %1" ).arg( vlayer->commitErrors().join( QLatin1String( "; " ) ) );
           vlayer->rollBack();
           continue;
         }
@@ -741,7 +741,7 @@ namespace QgsWfs
         if ( !vlayer->commitChanges() )
         {
           action.error = true;
-          action.errorMsg = QStringLiteral( "Error committing inserts: %1" ).arg( vlayer->commitErrors().join( QStringLiteral( "; " ) ) );
+          action.errorMsg = QStringLiteral( "Error committing inserts: %1" ).arg( vlayer->commitErrors().join( QLatin1String( "; " ) ) );
           vlayer->rollBack();
           continue;
         }
@@ -835,7 +835,7 @@ namespace QgsWfs
       {
         throw QgsRequestNotWellFormedException( QStringLiteral( "OPERATION parameter is mandatory" ) );
       }
-      if ( parameters.value( QStringLiteral( "OPERATION" ) ).toUpper() != QStringLiteral( "DELETE" ) )
+      if ( parameters.value( QStringLiteral( "OPERATION" ) ).toUpper() != QLatin1String( "DELETE" ) )
       {
         throw QgsRequestNotWellFormedException( QStringLiteral( "Only DELETE value is defined for OPERATION parameter" ) );
       }

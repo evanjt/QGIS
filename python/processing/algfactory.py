@@ -50,6 +50,7 @@ from qgis.core import (QgsProcessingParameterDefinition,
                        QgsProcessingParameterMatrix,
                        QgsProcessingParameterMultipleLayers,
                        QgsProcessingParameterPoint,
+                       QgsProcessingParameterGeometry,
                        QgsProcessingParameterRange,
                        QgsProcessingParameterRasterLayer,
                        QgsProcessingParameterVectorLayer,
@@ -58,6 +59,12 @@ from qgis.core import (QgsProcessingParameterDefinition,
                        QgsProcessingParameterScale,
                        QgsProcessingParameterLayout,
                        QgsProcessingParameterLayoutItem,
+                       QgsProcessingParameterDateTime,
+                       QgsProcessingParameterMapTheme,
+                       QgsProcessingParameterProviderConnection,
+                       QgsProcessingParameterDatabaseSchema,
+                       QgsProcessingParameterDatabaseTable,
+                       QgsProcessingParameterCoordinateOperation,
                        QgsProcessingOutputString,
                        QgsProcessingOutputBoolean,
                        QgsProcessingOutputFile,
@@ -69,7 +76,8 @@ from qgis.core import (QgsProcessingParameterDefinition,
                        QgsProcessingOutputNumber,
                        QgsProcessingOutputRasterLayer,
                        QgsProcessingOutputVectorLayer,
-                       QgsMessageLog)
+                       QgsMessageLog,
+                       QgsApplication)
 
 
 def _log(*args, **kw):
@@ -134,7 +142,7 @@ class AlgWrapper(QgsProcessingAlgorithm):
             raise NotImplementedError()
 
     # Wrapper logic
-    def define(self, name, label, group, group_label, help=None, icon=None):
+    def define(self, name, label, group, group_label, help=None, icon=QgsApplication.iconPath("processingScript.svg")):
         self._name = name
         self._display = label
         self._group = group_label
@@ -184,7 +192,7 @@ class AlgWrapper(QgsProcessingAlgorithm):
                 raise ProcessingAlgFactoryException("Can't find parent named {}".format(parentname))
 
         kwargs['description'] = kwargs.pop("label", "")
-        kwargs['defaultValue'] = kwargs.pop("default", "")
+        kwargs['defaultValue'] = kwargs.pop("default", None)
         advanced = kwargs.pop("advanced", False)
         try:
             if output:
@@ -319,12 +327,19 @@ class ProcessingAlgFactory():
     FIELD = "FIELD",
     MATRIX = "MATRIX",
     POINT = "POINT",
+    GEOMETRY = "GEOMETRY",
     RANGE = "RANGE",
     AUTH_CFG = "AUTH_CFG"
     SCALE = "SCALE"
     COLOR = "COLOR"
     LAYOUT = "LAYOUT"
     LAYOUT_ITEM = "LAYOUT_ITEM"
+    DATETIME = "DATETIME"
+    MAP_THEME = "MAP_THEME"
+    PROVIDER_CONNECTION = "PROVIDER_CONNECTION"
+    DATABASE_SCHEMA = "DATABASE_SCHEMA"
+    DATABASE_TABLE = "DATABASE_TABLE"
+    COORDINATE_OPERATION = "COORDINATE_OPERATION"
 
     def __init__(self):
         self._current = None
@@ -449,6 +464,7 @@ class ProcessingAlgFactory():
             alg.MATRIX: QgsProcessingParameterMatrix
             alg.MULTILAYER: QgsProcessingParameterMultipleLayers
             alg.POINT: QgsProcessingParameterPoint
+            alg.GEOMETRY: QgsProcessingParameterGeometry
             alg.RANGE: QgsProcessingParameterRange
             alg.VECTOR_LAYER: QgsProcessingParameterVectorLayer
             alg.AUTH_CFG: QgsProcessingParameterAuthConfig
@@ -457,6 +473,12 @@ class ProcessingAlgFactory():
             alg.LAYOUT: QgsProcessingParameterLayout
             alg.LAYOUT_ITEM: QgsProcessingParameterLayoutItem
             alg.COLOR: QgsProcessingParameterColor
+            alg.DATETIME: QgsProcessingParameterDateTime
+            alg.MAP_THEME: QgsProcessingParameterMapTheme
+            alg.PROVIDER_CONNECTION: QgsProcessingParameterProviderConnection
+            alg.DATABASE_SCHEMA: QgsProcessingParameterDatabaseSchema
+            alg.DATABASE_TABLE: QgsProcessingParameterDatabaseTable
+            alg.COORDINATE_OPERATION: QgsProcessingParameterCoordinateOperation
 
         :param type: The type of the input. This should be a type define on `alg` like alg.STRING, alg.DISTANCE
         :keyword label: The label of the output. Translates into `description` arg.
@@ -500,6 +522,7 @@ input_type_mapping = {
     ProcessingAlgFactory.MATRIX: QgsProcessingParameterMatrix,
     ProcessingAlgFactory.MULTILAYER: QgsProcessingParameterMultipleLayers,
     ProcessingAlgFactory.POINT: QgsProcessingParameterPoint,
+    ProcessingAlgFactory.GEOMETRY: QgsProcessingParameterGeometry,
     ProcessingAlgFactory.RANGE: QgsProcessingParameterRange,
     ProcessingAlgFactory.VECTOR_LAYER: QgsProcessingParameterVectorLayer,
     ProcessingAlgFactory.AUTH_CFG: QgsProcessingParameterAuthConfig,
@@ -508,6 +531,12 @@ input_type_mapping = {
     ProcessingAlgFactory.LAYOUT: QgsProcessingParameterLayout,
     ProcessingAlgFactory.LAYOUT_ITEM: QgsProcessingParameterLayoutItem,
     ProcessingAlgFactory.COLOR: QgsProcessingParameterColor,
+    ProcessingAlgFactory.DATETIME: QgsProcessingParameterDateTime,
+    ProcessingAlgFactory.MAP_THEME: QgsProcessingParameterMapTheme,
+    ProcessingAlgFactory.PROVIDER_CONNECTION: QgsProcessingParameterProviderConnection,
+    ProcessingAlgFactory.DATABASE_SCHEMA: QgsProcessingParameterDatabaseSchema,
+    ProcessingAlgFactory.DATABASE_TABLE: QgsProcessingParameterDatabaseTable,
+    ProcessingAlgFactory.COORDINATE_OPERATION: QgsProcessingParameterCoordinateOperation
 }
 
 output_type_mapping = {

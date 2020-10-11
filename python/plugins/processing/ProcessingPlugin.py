@@ -51,7 +51,7 @@ from processing.gui.AlgorithmLocatorFilter import (AlgorithmLocatorFilter,
                                                    InPlaceAlgorithmLocatorFilter)
 from processing.modeler.ModelerDialog import ModelerDialog
 from processing.tools.system import tempHelpFolder
-from processing.gui.menus import removeMenus, initializeMenus, createMenus
+from processing.gui.menus import removeMenus, initializeMenus, createMenus, createButtons, removeButtons
 from processing.core.ProcessingResults import resultsList
 
 pluginPath = os.path.dirname(__file__)
@@ -122,7 +122,7 @@ class ProcessingModelItem(QgsDataItem):
         ProcessingDropHandler.runAlg(self.path())
 
     def editModel(self):
-        dlg = ModelerDialog()
+        dlg = ModelerDialog.create()
         dlg.loadModel(self.path())
         dlg.show()
 
@@ -213,11 +213,11 @@ class ProcessingPlugin:
 
         self.modelerAction = QAction(
             QgsApplication.getThemeIcon("/processingModel.svg"),
-            QCoreApplication.translate('ProcessingPlugin', 'Graphical &Modeler…'), self.iface.mainWindow())
+            QCoreApplication.translate('ProcessingPlugin', '&Graphical Modeler…'), self.iface.mainWindow())
         self.modelerAction.setObjectName('modelerAction')
         self.modelerAction.triggered.connect(self.openModeler)
         self.iface.registerMainWindowAction(self.modelerAction,
-                                            QKeySequence('Ctrl+Alt+M').toString(QKeySequence.NativeText))
+                                            QKeySequence('Ctrl+Alt+G').toString(QKeySequence.NativeText))
         self.menu.addAction(self.modelerAction)
 
         self.historyAction = QAction(
@@ -271,6 +271,7 @@ class ProcessingPlugin:
 
         initializeMenus()
         createMenus()
+        createButtons()
 
         # In-place editing button state sync
         self.iface.currentLayerChanged.connect(self.sync_in_place_button_state)
@@ -306,11 +307,6 @@ class ProcessingPlugin:
         self.toolbox.deleteLater()
         self.menu.deleteLater()
 
-        # delete temporary output files
-        folder = QgsProcessingUtils.tempFolder()
-        if QDir(folder).exists():
-            shutil.rmtree(folder, True)
-
         # also delete temporary help files
         folder = tempHelpFolder()
         if QDir(folder).exists():
@@ -327,6 +323,7 @@ class ProcessingPlugin:
         self.iface.unregisterCustomDropHandler(self.drop_handler)
         QgsApplication.dataItemProviderRegistry().removeProvider(self.item_provider)
 
+        removeButtons()
         removeMenus()
         Processing.deinitialize()
 
@@ -337,7 +334,7 @@ class ProcessingPlugin:
         self.toolboxAction.setChecked(visible)
 
     def openModeler(self):
-        dlg = ModelerDialog()
+        dlg = ModelerDialog.create()
         dlg.update_model.connect(self.updateModel)
         dlg.show()
 

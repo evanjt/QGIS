@@ -30,7 +30,7 @@ class QgsDb2LayerItem;
  * \class QgsDb2RootItem
  * \brief Browser Panel DB2 root object.
  */
-class QgsDb2RootItem : public QgsDataCollectionItem
+class QgsDb2RootItem : public QgsConnectionsRootItem
 {
     Q_OBJECT
 
@@ -108,6 +108,10 @@ class QgsDb2SchemaItem : public QgsDataCollectionItem
 
     void refresh() override {} // do not refresh directly
     void addLayers( QgsDataItem *newLayers );
+
+    // QgsDataItem interface
+  public:
+    bool layerCollection() const override;
 };
 
 /**
@@ -134,6 +138,7 @@ class QgsDb2DataItemProvider : public QgsDataItemProvider
 {
   public:
     QString name() override;
+    QString dataProviderKey() const override;
     int capabilities() const override;
     QgsDataItem *createDataItem( const QString &pathIn, QgsDataItem *parentItem ) override;
 };

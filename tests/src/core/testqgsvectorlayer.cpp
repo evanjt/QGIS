@@ -12,6 +12,7 @@
  *   (at your option) any later version.                                   *
  *                                                                         *
  ***************************************************************************/
+
 #include "qgstest.h"
 #include <QObject>
 #include <QString>
@@ -82,6 +83,7 @@ class TestQgsVectorLayer : public QObject
     QString mTestDataDir;
     QString mReport;
 
+
   private slots:
 
     void initTestCase(); // will be called before the first testfunction is executed.
@@ -99,6 +101,8 @@ class TestQgsVectorLayer : public QObject
     void maximumValue();
     void isSpatial();
     void testAddTopologicalPoints();
+    void testCopyPasteFieldConfiguration();
+    void testCopyPasteFieldConfiguration_data();
 };
 
 void TestQgsVectorLayer::initTestCase()
@@ -358,24 +362,81 @@ void TestQgsVectorLayer::testAddTopologicalPoints()
   QCOMPARE( layerLine->undoStack()->index(), 1 );
 
   // outside of the linestring - nothing should happen
-  layerLine->addTopologicalPoints( QgsPointXY( 2, 2 ) );
+  layerLine->addTopologicalPoints( QgsPoint( 2, 2 ) );
 
   QCOMPARE( layerLine->undoStack()->index(), 1 );
   QCOMPARE( layerLine->getFeature( fidLineF1 ).geometry().asWkt(), QgsGeometry::fromWkt( "LINESTRING(2 1, 1 1, 1 3)" ).asWkt() );
 
   // add point at an existing vertex
-  layerLine->addTopologicalPoints( QgsPointXY( 1, 1 ) );
+  layerLine->addTopologicalPoints( QgsPoint( 1, 1 ) );
 
   QCOMPARE( layerLine->undoStack()->index(), 1 );
   QCOMPARE( layerLine->getFeature( fidLineF1 ).geometry().asWkt(), QgsGeometry::fromWkt( "LINESTRING(2 1, 1 1, 1 3)" ).asWkt() );
 
   // add point on segment of linestring
-  layerLine->addTopologicalPoints( QgsPointXY( 1, 2 ) );
+  layerLine->addTopologicalPoints( QgsPoint( 1, 2 ) );
 
   QCOMPARE( layerLine->undoStack()->index(), 2 );
   QCOMPARE( layerLine->getFeature( fidLineF1 ).geometry().asWkt(), QgsGeometry::fromWkt( "LINESTRING(2 1, 1 1, 1 2, 1 3)" ).asWkt() );
 
   delete layerLine;
+}
+
+void TestQgsVectorLayer::testCopyPasteFieldConfiguration_data()
+{
+  QTest::addColumn<QgsMapLayer::StyleCategories>( "categories" );
+  // QTest::addColumn<double>( "flagExpected" );
+  // QTest::addColumn<double>( "widgetExpected" );
+
+  QTest::newRow( "forms_and_fields" ) << ( QgsMapLayer::Fields | QgsMapLayer::Forms );
+  QTest::newRow( "forms" ) << QgsMapLayer::StyleCategories( QgsMapLayer::Forms );
+  QTest::newRow( "fields" ) << QgsMapLayer::StyleCategories( QgsMapLayer::Fields );
+  QTest::newRow( "none" ) << QgsMapLayer::StyleCategories( QgsMapLayer::StyleCategories() );
+}
+
+void TestQgsVectorLayer::testCopyPasteFieldConfiguration()
+{
+  QFETCH( QgsMapLayer::StyleCategories, categories );
+
+  QgsVectorLayer layer1( QStringLiteral( "Point?field=name:string" ), QStringLiteral( "layer1" ), QStringLiteral( "memory" ) );
+  QVERIFY( layer1.isValid() );
+  QVERIFY( layer1.editorWidgetSetup( 0 ).type().isEmpty() );
+  QCOMPARE( layer1.fieldConfigurationFlags( 0 ), QgsField::ConfigurationFlags() );
+
+  layer1.setEditorWidgetSetup( 0, QgsEditorWidgetSetup( "ValueMap", QVariantMap() ) );
+  QCOMPARE( layer1.editorWidgetSetup( 0 ).type(), QStringLiteral( "ValueMap" ) );
+  layer1.setFieldConfigurationFlags( 0, QgsField::ConfigurationFlag::NotSearchable );
+  QCOMPARE( layer1.fieldConfigurationFlags( 0 ), QgsField::ConfigurationFlag::NotSearchable );
+
+  // export given categories, import all
+  QString errorMsg;
+  QDomDocument doc( QStringLiteral( "qgis" ) );
+  QgsReadWriteContext context;
+  layer1.exportNamedStyle( doc, errorMsg, context, categories );
+  QVERIFY( errorMsg.isEmpty() );
+
+  QgsVectorLayer layer2( QStringLiteral( "Point?field=name:string" ), QStringLiteral( "layer2" ), QStringLiteral( "memory" ) );
+  QVERIFY( layer2.isValid() );
+  QVERIFY( layer2.editorWidgetSetup( 0 ).type().isEmpty() );
+  QCOMPARE( layer2.fieldConfigurationFlags( 0 ), QgsField::ConfigurationFlags() );
+
+  QVERIFY( layer2.importNamedStyle( doc, errorMsg ) );
+  QCOMPARE( layer2.editorWidgetSetup( 0 ).type(), categories.testFlag( QgsMapLayer::Forms ) ? QStringLiteral( "ValueMap" ) : QString( "" ) );
+  QCOMPARE( layer2.fieldConfigurationFlags( 0 ), categories.testFlag( QgsMapLayer::Fields ) ? QgsField::ConfigurationFlag::NotSearchable : QgsField::ConfigurationFlags() );
+
+  // export all, import given categories
+  QDomDocument doc2( QStringLiteral( "qgis" ) );
+  layer1.exportNamedStyle( doc2, errorMsg, context );
+  QVERIFY( errorMsg.isEmpty() );
+
+  QgsVectorLayer layer3( QStringLiteral( "Point?field=name:string" ), QStringLiteral( "layer3" ), QStringLiteral( "memory" ) );
+  QVERIFY( layer3.isValid() );
+  QVERIFY( layer3.editorWidgetSetup( 0 ).type().isEmpty() );
+  QCOMPARE( layer3.fieldConfigurationFlags( 0 ), QgsField::ConfigurationFlags() );
+
+  QVERIFY( layer3.importNamedStyle( doc2, errorMsg, categories ) );
+  QCOMPARE( layer3.editorWidgetSetup( 0 ).type(), categories.testFlag( QgsMapLayer::Forms ) ? QStringLiteral( "ValueMap" ) : QString( "" ) );
+  QCOMPARE( layer3.fieldConfigurationFlags( 0 ), categories.testFlag( QgsMapLayer::Fields ) ? QgsField::ConfigurationFlag::NotSearchable : QgsField::ConfigurationFlags() );
 }
 
 QGSTEST_MAIN( TestQgsVectorLayer )

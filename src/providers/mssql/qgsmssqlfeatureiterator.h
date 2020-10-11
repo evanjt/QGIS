@@ -25,9 +25,11 @@
 #include <QtSql/QSqlQuery>
 #include <QtSql/QSqlError>
 
+#include "qgsmssqlprovider.h"
+
 class QgsMssqlProvider;
 
-class QgsMssqlFeatureSource : public QgsAbstractFeatureSource
+class QgsMssqlFeatureSource final: public QgsAbstractFeatureSource
 {
   public:
     explicit QgsMssqlFeatureSource( const QgsMssqlProvider *p );
@@ -36,7 +38,9 @@ class QgsMssqlFeatureSource : public QgsAbstractFeatureSource
 
   private:
     QgsFields mFields;
-    QString mFidColName;
+    QgsMssqlPrimaryKeyType mPrimaryKeyType;
+    QList<int> mPrimaryKeyAttrs;
+    std::shared_ptr<QgsMssqlSharedData> mShared;
     long mSRId;
 
     /* sql geo type */
@@ -72,7 +76,7 @@ class QgsMssqlFeatureSource : public QgsAbstractFeatureSource
     friend class QgsMssqlExpressionCompiler;
 };
 
-class QgsMssqlFeatureIterator : public QgsAbstractFeatureIteratorFromSource<QgsMssqlFeatureSource>
+class QgsMssqlFeatureIterator final: public QgsAbstractFeatureIteratorFromSource<QgsMssqlFeatureSource>
 {
   public:
     QgsMssqlFeatureIterator( QgsMssqlFeatureSource *source, bool ownSource, const QgsFeatureRequest &request );
@@ -83,13 +87,12 @@ class QgsMssqlFeatureIterator : public QgsAbstractFeatureIteratorFromSource<QgsM
     bool close() override;
 
   protected:
-
     bool fetchFeature( QgsFeature &feature ) override;
     bool nextFeatureFilterExpression( QgsFeature &f ) override;
 
   private:
     void BuildStatement( const QgsFeatureRequest &request );
-
+    QString whereClauseFid( QgsFeatureId featureId );
 
   private:
 
@@ -109,9 +112,6 @@ class QgsMssqlFeatureIterator : public QgsAbstractFeatureIteratorFromSource<QgsM
     QString mOrderByClause;
 
     QString mFallbackStatement;
-
-    // Field index of FID column
-    int mFidCol = -1;
 
     // List of attribute indices to fetch with nextFeature calls
     QgsAttributeList mAttributesToFetch;

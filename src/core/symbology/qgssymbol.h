@@ -24,6 +24,7 @@
 #include "qgsfields.h"
 #include "qgsrendercontext.h"
 #include "qgsproperty.h"
+#include "qgssymbollayerreference.h"
 
 class QColor;
 class QImage;
@@ -49,6 +50,7 @@ class QgsCurve;
 class QgsPolygon;
 class QgsExpressionContext;
 class QgsPoint;
+class QgsLegendPatchShape;
 
 typedef QList<QgsSymbolLayer *> QgsSymbolLayerList;
 
@@ -139,6 +141,14 @@ class CORE_EXPORT QgsSymbol
      * \since QGIS 2.7
      */
     QgsSymbolLayer *symbolLayer( int layer );
+
+    /**
+     * Returns the symbol layer at the specified index, const variant
+     * \see symbolLayers
+     * \see symbolLayerCount
+     * \since QGIS 3.12
+     */
+    const QgsSymbolLayer *symbolLayer( int layer ) const;
 #else
 
     /**
@@ -326,13 +336,16 @@ class CORE_EXPORT QgsSymbol
      * \param size size of the icon
      * \param customContext the context in which the rendering happens
      * \param selected set to TRUE to render the symbol in a selected state
+     * \param expressionContext optional custom expression context
+     * \param patchShape optional patch shape to use for symbol preview. If not specified a default shape will be used instead.
      *
      * \see exportImage()
      * \see asImage()
      * \note Parameter selected added in QGIS 3.10
      * \since QGIS 2.6
      */
-    void drawPreviewIcon( QPainter *painter, QSize size, QgsRenderContext *customContext = nullptr, bool selected = false );
+    void drawPreviewIcon( QPainter *painter, QSize size, QgsRenderContext *customContext = nullptr, bool selected = false, const QgsExpressionContext *expressionContext = nullptr,
+                          const QgsLegendPatchShape *patchShape = nullptr );
 
     /**
      * Export the symbol as an image format, to the specified \a path and with the given \a size.
@@ -576,7 +589,7 @@ class CORE_EXPORT QgsSymbol
      * clockwise for exterior rings and counter-clockwise for interior rings.
      *
      */
-    static void _getPolygon( QPolygonF &pts, QList<QPolygonF> &holes, QgsRenderContext &context, const QgsPolygon &polygon, bool clipToExtent = true, bool correctRingOrientation = false );
+    static void _getPolygon( QPolygonF &pts, QVector<QPolygonF> &holes, QgsRenderContext &context, const QgsPolygon &polygon, bool clipToExtent = true, bool correctRingOrientation = false );
 
     /**
      * Retrieve a cloned list of all layers that make up this symbol.
@@ -607,7 +620,7 @@ class CORE_EXPORT QgsSymbol
     //! Symbol opacity (in the range 0 - 1)
     qreal mOpacity = 1.0;
 
-    RenderHints mRenderHints = nullptr;
+    RenderHints mRenderHints;
     bool mClipFeaturesToExtent = true;
     bool mForceRHR = false;
 
@@ -626,6 +639,32 @@ class CORE_EXPORT QgsSymbol
 
     //! Initialized in startRender, destroyed in stopRender
     std::unique_ptr< QgsSymbolRenderContext > mSymbolRenderContext;
+
+    /**
+     * Called before symbol layers will be rendered for a particular \a feature.
+     *
+     * This is always followed by a call to stopFeatureRender() after the feature
+     * has been completely rendered (i.e. all parts have been rendered).
+     *
+     * Internally, this notifies all symbol layers which will be used via a call to
+     * QgsSymbolLayer::startFeatureRender().
+     *
+     * \since QGIS 3.12
+     */
+    void startFeatureRender( const QgsFeature &feature, QgsRenderContext &context, int layer = -1 );
+
+    /**
+     * Called after symbol layers have been rendered for a particular \a feature.
+     *
+     * This is always preceded by a call to startFeatureRender() just before the feature
+     * will be rendered.
+     *
+     * Internally, this notifies all symbol layers which were used via a call to
+     * QgsSymbolLayer::stopFeatureRender().
+     *
+     * \since QGIS 3.12
+     */
+    void stopFeatureRender( const QgsFeature &feature, QgsRenderContext &context, int layer = -1 );
 
     Q_DISABLE_COPY( QgsSymbol )
 
@@ -656,7 +695,9 @@ class CORE_EXPORT QgsSymbolRenderContext
      * \param fields
      * \param mapUnitScale
      */
-    QgsSymbolRenderContext( QgsRenderContext &c, QgsUnitTypes::RenderUnit u, qreal opacity = 1.0, bool selected = false, QgsSymbol::RenderHints renderHints = nullptr, const QgsFeature *f = nullptr, const QgsFields &fields = QgsFields(), const QgsMapUnitScale &mapUnitScale = QgsMapUnitScale() );
+    QgsSymbolRenderContext( QgsRenderContext &c, QgsUnitTypes::RenderUnit u, qreal opacity = 1.0, bool selected = false, QgsSymbol::RenderHints renderHints = QgsSymbol::RenderHints(), const QgsFeature *f = nullptr, const QgsFields &fields = QgsFields(), const QgsMapUnitScale &mapUnitScale = QgsMapUnitScale() );
+
+    ~QgsSymbolRenderContext();
 
     //! QgsSymbolRenderContext cannot be copied.
     QgsSymbolRenderContext( const QgsSymbolRenderContext &rh ) = delete;
@@ -825,6 +866,22 @@ class CORE_EXPORT QgsSymbolRenderContext
      */
     void setExpressionContextScope( QgsExpressionContextScope *contextScope SIP_TRANSFER );
 
+    /**
+     * Returns the symbol patch shape, to use if rendering symbol preview icons.
+     *
+     * \see setPatchShape()
+     * \since QGIS 3.14
+     */
+    const QgsLegendPatchShape *patchShape() const;
+
+    /**
+     * Sets the symbol patch \a shape, to use if rendering symbol preview icons.
+     *
+     * \see patchShape()
+     * \since QGIS 3.14
+     */
+    void setPatchShape( const QgsLegendPatchShape &shape );
+
   private:
 
 #ifdef SIP_RUN
@@ -843,6 +900,7 @@ class CORE_EXPORT QgsSymbolRenderContext
     int mGeometryPartCount;
     int mGeometryPartNum;
     QgsWkbTypes::GeometryType mOriginalGeometryType = QgsWkbTypes::UnknownGeometry;
+    std::unique_ptr< QgsLegendPatchShape > mPatchShape;
 };
 
 
@@ -1082,6 +1140,14 @@ class CORE_EXPORT QgsLineSymbol : public QgsSymbol
     void setWidth( double width );
 
     /**
+     * Sets the width units for the whole symbol (including all symbol layers).
+     * \param unit size units
+     * \since QGIS 3.16
+     */
+    void setWidthUnit( QgsUnitTypes::RenderUnit unit );
+
+
+    /**
      * Returns the estimated width for the whole symbol, which is the maximum width of
      * all marker symbol layers in the symbol.
      *
@@ -1184,17 +1250,17 @@ class CORE_EXPORT QgsFillSymbol : public QgsSymbol
      * If \a selected is true then the symbol will be drawn using the "selected feature"
      * style and colors instead of the symbol's normal style.
      */
-    void renderPolygon( const QPolygonF &points, QList<QPolygonF> *rings, const QgsFeature *f, QgsRenderContext &context, int layer = -1, bool selected = false );
+    void renderPolygon( const QPolygonF &points, const QVector<QPolygonF> *rings, const QgsFeature *f, QgsRenderContext &context, int layer = -1, bool selected = false );
 
     QgsFillSymbol *clone() const override SIP_FACTORY;
 
   private:
 
-    void renderPolygonUsingLayer( QgsSymbolLayer *layer, const QPolygonF &points, QList<QPolygonF> *rings, QgsSymbolRenderContext &context );
+    void renderPolygonUsingLayer( QgsSymbolLayer *layer, const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context );
     //! Calculates the bounds of a polygon including rings
-    QRectF polygonBounds( const QPolygonF &points, const QList<QPolygonF> *rings ) const;
+    QRectF polygonBounds( const QPolygonF &points, const QVector<QPolygonF> *rings ) const;
     //! Translates the rings in a polygon by a set distance
-    QList<QPolygonF> *translateRings( const QList<QPolygonF> *rings, double dx, double dy ) const;
+    QVector<QPolygonF> *translateRings( const QVector<QPolygonF> *rings, double dx, double dy ) const;
 };
 
 #endif

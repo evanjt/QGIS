@@ -57,7 +57,7 @@ QgsCustomLayerOrderWidget::QgsCustomLayerOrderWidget( QgsLayerTreeMapCanvasBridg
   connect( bridge->rootGroup(), &QgsLayerTreeNode::visibilityChanged, this, &QgsCustomLayerOrderWidget::nodeVisibilityChanged );
 
   QVBoxLayout *l = new QVBoxLayout;
-  l->setMargin( 0 );
+  l->setContentsMargins( 0, 0, 0, 0 );
   l->addWidget( mView );
   l->addWidget( mChkOverride );
   setLayout( l );
@@ -132,13 +132,14 @@ QVariant CustomLayerOrderModel::data( const QModelIndex &index, int role ) const
 
 bool CustomLayerOrderModel::setData( const QModelIndex &index, const QVariant &value, int role )
 {
+  Q_UNUSED( value ); // Toggle
   if ( role == Qt::CheckStateRole )
   {
     QString id = mOrder.at( index.row() );
     QgsLayerTreeLayer *nodeLayer = mBridge->rootGroup()->findLayer( id );
     if ( nodeLayer )
     {
-      nodeLayer->setItemVisibilityChecked( static_cast< Qt::CheckState >( value.toInt() ) == Qt::Checked );
+      nodeLayer->setItemVisibilityChecked( ! nodeLayer->itemVisibilityChecked() );
       return true;
     }
   }
@@ -172,7 +173,7 @@ QMimeData *CustomLayerOrderModel::mimeData( const QModelIndexList &indexes ) con
     lst << data( index, Qt::UserRole + 1 ).toString();
 
   QMimeData *mimeData = new QMimeData();
-  mimeData->setData( QStringLiteral( "application/qgis.layerorderdata" ), lst.join( QStringLiteral( "\n" ) ).toUtf8() );
+  mimeData->setData( QStringLiteral( "application/qgis.layerorderdata" ), lst.join( QLatin1Char( '\n' ) ).toUtf8() );
   return mimeData;
 }
 

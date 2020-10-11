@@ -18,7 +18,7 @@
 
 #include "qgis_gui.h"
 #include "qgis_sip.h"
-#include "raster/qgsrasterlayer.h"
+#include "qgsrasterlayer.h"
 #include <QComboBox>
 
 class QgsMapLayer;
@@ -69,6 +69,11 @@ class GUI_EXPORT QgsRasterBandComboBox : public QComboBox
      */
     void setShowNotSetOption( bool show, const QString &string = QString() );
 
+    /**
+     * Returns a user-friendly band name for the specified \a band.
+     */
+    static QString displayBandName( QgsRasterDataProvider *provider, int band );
+
   public slots:
 
     /**
@@ -97,8 +102,8 @@ class GUI_EXPORT QgsRasterBandComboBox : public QComboBox
 
     bool mShowNotSet = false;
     QString mNotSetString;
+    int mPrevBand = -1;
 
-    QString displayBandName( QgsRasterDataProvider *provider, int band ) const;
 
 
 };

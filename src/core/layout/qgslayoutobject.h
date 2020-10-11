@@ -174,6 +174,14 @@ class CORE_EXPORT QgsLayoutObject: public QObject, public QgsExpressionContextGe
       MapGridLabelDistance, //!< Map grid label distance
       MapGridCrossSize, //!< Map grid cross size
       MapGridFrameLineThickness, //!< Map grid frame line thickness
+      MapGridAnnotationDisplayLeft, //!< Map annotation display left
+      MapGridAnnotationDisplayRight, //!< Map annotation display right
+      MapGridAnnotationDisplayTop, //!< Map annotation display top
+      MapGridAnnotationDisplayBottom, //!< Map annotation display bottom
+      MapGridFrameDivisionsLeft, //!< Map frame division display left
+      MapGridFrameDivisionsRight, //!< Map frame division display right
+      MapGridFrameDivisionsTop, //!< Map frame division display top
+      MapGridFrameDivisionsBottom, //!< Map frame division display bottom
       //composer picture
       PictureSource, //!< Picture source url
       PictureSvgBackgroundColor, //!< SVG background color
@@ -185,12 +193,15 @@ class CORE_EXPORT QgsLayoutObject: public QObject, public QgsExpressionContextGe
       LegendTitle, //!< Legend title
       LegendColumnCount, //!< Legend column count
       //scalebar item
-      ScalebarFillColor, //!< Scalebar fill color
-      ScalebarFillColor2, //!< Scalebar secondary fill color
-      ScalebarLineColor, //!< Scalebar line color
-      ScalebarLineWidth, //!< Scalebar line width,
+      ScalebarFillColor, //!< Scalebar fill color (deprecated, use data defined properties on scalebar fill symbol 1 instead)
+      ScalebarFillColor2, //!< Scalebar secondary fill color (deprecated, use data defined properties on scalebar fill symbol 2 instead)
+      ScalebarLineColor, //!< Scalebar line color (deprecated, use data defined properties on scalebar line symbol instead)
+      ScalebarLineWidth, //!< Scalebar line width (deprecated, use data defined properties on scalebar line symbol instead)
       //table item
       AttributeTableSourceLayer, //!< Attribute table source layer
+      MapCrs, //!< Map CRS
+      StartDateTime, //!< Temporal range's start DateTime
+      EndDateTime, //!< Temporal range's end DateTime
     };
 
     /**

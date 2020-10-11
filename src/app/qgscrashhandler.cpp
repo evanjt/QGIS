@@ -59,19 +59,22 @@ LONG WINAPI QgsCrashHandler::handle( LPEXCEPTION_POINTERS exception )
   arguments = QCoreApplication::arguments();
   // TODO In future this needs to be moved out into a "session state" file because we can't trust this is valid in
   // a crash.
-  arguments << QgsProject::instance()->fileName();
+  QString projectFile = QgsProject::instance()->fileName();
+  if ( !projectFile.isEmpty() )
+    // quote project file path to avoid issues if it has spaces
+    arguments << QStringLiteral( "\"%1\"" ).arg( projectFile );
 
   QStringList reportData;
-  reportData.append( QStringLiteral( "QGIS Version: %1" ).arg( Qgis::QGIS_VERSION ) );
+  reportData.append( QStringLiteral( "QGIS Version: %1" ).arg( Qgis::version() ) );
 
-  if ( QString( Qgis::QGIS_DEV_VERSION ) == QLatin1String( "exported" ) )
+  if ( QString( Qgis::devVersion() ) == QLatin1String( "exported" ) )
   {
     reportData.append( QStringLiteral( "QGIS code branch: Release %1.%2" )
-                       .arg( Qgis::QGIS_VERSION_INT / 10000 ).arg( Qgis::QGIS_VERSION_INT / 100 % 100 ) );
+                       .arg( Qgis::versionInt() / 10000 ).arg( Qgis::versionInt() / 100 % 100 ) );
   }
   else
   {
-    reportData.append( QStringLiteral( "QGIS code revision: %1" ).arg( Qgis::QGIS_DEV_VERSION ) );
+    reportData.append( QStringLiteral( "QGIS code revision: %1" ).arg( Qgis::devVersion() ) );
   }
 
   reportData.append( QStringLiteral( "Compiled against Qt: %1" ).arg( QT_VERSION_STR ) );

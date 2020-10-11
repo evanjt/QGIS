@@ -50,9 +50,13 @@ class QgsGeoNodeServiceItem : public QgsDataCollectionItem
     QString mServiceName;
     QString mUri;
     QgsGeoNodeConnection *mConnection = nullptr;
+
+    // QgsDataItem interface
+  public:
+    bool layerCollection() const override;
 };
 
-class QgsGeoNodeRootItem : public QgsDataCollectionItem
+class QgsGeoNodeRootItem : public QgsConnectionsRootItem
 {
     Q_OBJECT
   public:

@@ -12,6 +12,10 @@ tests:
       OUTPUT:
         name: expected/mean_coordinates.gml
         type: vector
+        compare:
+          fields:
+            __all__:
+              precision: 5
 
   - algorithm: native:meancoordinates
     name: Mean coordinates, multiple grouped
@@ -89,8 +93,8 @@ tests:
           fields:
             fid: skip
 
-  - algorithm: qgis:zonalstatistics
-    name: simple zonal statistics
+  - algorithm: native:zonalstatistics
+    name: Zonal statistics
     params:
       COLUMN_PREFIX: _
       INPUT_RASTER:
@@ -115,7 +119,7 @@ tests:
             precision: 5
 
   - algorithm: qgis:zonalhistogram
-    name: zonal histogram
+    name: Zonal histogram
     params:
       COLUMN_PREFIX: HISTO_
       INPUT_RASTER:
@@ -178,7 +182,7 @@ tests:
         name: expected/poly_ring_self_intersection_valid_ignore_self.gml
         type: vector
 
-  - algorithm: qgis:polygonize
+  - algorithm: native:polygonize
     name: Polygonize
     params:
       KEEP_FIELDS: false
@@ -293,7 +297,7 @@ tests:
         name: expected/projection_candidates.gml
         type: vector
 
-  - algorithm: qgis:polygonfromlayerextent
+  - algorithm: native:polygonfromlayerextent
     name: Standard polygon from layer extent
     params:
       BY_FEATURE: false
@@ -396,7 +400,7 @@ tests:
         name: expected/buffer_ovals.gml
         type: vector
 
-  - algorithm: qgis:creategrid
+  - algorithm: native:creategrid
     name: Lines grid 0.1 degree spacing
     params:
       CRS: EPSG:4326
@@ -410,6 +414,16 @@ tests:
       OUTPUT:
         name: expected/create_grid_lines.gml
         type: vector
+        compare:
+          fields:
+            left:
+              precision: 7
+            right:
+              precision: 7
+            top:
+              precision: 7
+            bottom:
+              precision: 7
 
   - algorithm: qgis:convertgeometrytype
     name: polygon to centroid
@@ -531,8 +545,7 @@ tests:
         name: expected/extract_by_location_touches.gml
         type: vector
 
-
-  - algorithm: qgis:addfieldtoattributestable
+  - algorithm: native:addfieldtoattributestable
     name: add float field
     params:
       FIELD_LENGTH: 10
@@ -565,20 +578,157 @@ tests:
             __all__:
               precision: 4
 
-  - algorithm: qgis:randompointsinextent
+  - algorithm: native:randompointsinextent
     name: Random point in extent, don't check result
     params:
       TARGET_CRS: EPSG:4326
       EXTENT: 3.9821361058601132,4.01984877126654,0.9948015122873343,1.0305293005671075
       MIN_DISTANCE: 0.0
       POINTS_NUMBER: 5
+      MAX_ATTEMPTS: 200
     results:
       OUTPUT:
         compare: false
         type: vector
         name: randompointsinextent.gml
 
-  - algorithm: qgis:randomextract
+  - algorithm: native:randompointsinpolygons
+    name: Random points in polygons, 10 pts, min distance 0.0, 10 tries, seed 1, attributes
+    params:
+      INCLUDE_POLYGON_ATTRIBUTES: true
+      INPUT:
+        name: polys.gml
+        type: vector
+      MAX_TRIES_PER_POINT: 10
+      MIN_DISTANCE: 0.0
+      MIN_DISTANCE_GLOBAL: 0.0
+      POINTS_NUMBER: 10
+      SEED: 1
+    results:
+      OUTPUT:
+        name: expected/randompointsinpolygons.gml
+        type: vector
+
+  - algorithm: native:randompointsinpolygons
+    name: Random points in polygons, 10 pts, global min distance 2.0, 10 tries, seed 1, attributes
+    params:
+      INCLUDE_POLYGON_ATTRIBUTES: true
+      INPUT:
+        name: polys.gml
+        type: vector
+      MAX_TRIES_PER_POINT: 10
+      MIN_DISTANCE: 0.0
+      MIN_DISTANCE_GLOBAL: 2.0
+      POINTS_NUMBER: 10
+      SEED: 1
+    results:
+      OUTPUT:
+        name: expected/randompointsinpolygons_gmin2.gml
+        type: vector
+
+  - algorithm: native:randompointsinpolygons
+    name: Random points in polygons, 10 pts, min distance 2.0, 10 tries, seed 1, no attributes
+    params:
+      INCLUDE_POLYGON_ATTRIBUTES: false
+      INPUT:
+        name: polys.gml
+        type: vector
+      MAX_TRIES_PER_POINT: 10
+      MIN_DISTANCE: 2.0
+      MIN_DISTANCE_GLOBAL: 0.0
+      POINTS_NUMBER: 10
+      SEED: 1
+    results:
+      OUTPUT:
+        name: expected/randompointsinpolygons_min2.gml
+        type: vector
+
+  - algorithm: native:randompointsinpolygons
+    name: Random points in polygons, 10 pts, global min distance 2.0, min distance 2.0, 10 tries, seed 1, attributes
+    params:
+      INCLUDE_POLYGON_ATTRIBUTES: true
+      INPUT:
+        name: polys.gml
+        type: vector
+      MAX_TRIES_PER_POINT: 10
+      MIN_DISTANCE: 2.0
+      MIN_DISTANCE_GLOBAL: 2.0
+      POINTS_NUMBER: 10
+      SEED: 1
+    results:
+      OUTPUT:
+        name: expected/randompointsinpolygons_min2_gmin2.gml
+        type: vector
+
+  - algorithm: native:randompointsonlines
+    name: Random points on lines, seed 1, multilines - one empty geom
+    params:
+      INCLUDE_LINE_ATTRIBUTES: true
+      INPUT:
+        name: multilines.gml
+        type: vector
+      MAX_TRIES_PER_POINT: 10
+      MIN_DISTANCE: 0.0
+      MIN_DISTANCE_GLOBAL: 0.0
+      POINTS_NUMBER: 10
+      SEED: 1
+    results:
+      OUTPUT:
+        name: expected/randompointsonlines.gml
+        type: vector
+
+  - algorithm: native:randompointsonlines
+    name: Random points on lines, global min distance 2, seed 1, attributes, multilines - one empty geom
+    params:
+      INCLUDE_LINE_ATTRIBUTES: true
+      INPUT:
+        name: multilines.gml
+        type: vector
+      MAX_TRIES_PER_POINT: 10
+      MIN_DISTANCE: 0.0
+      MIN_DISTANCE_GLOBAL: 2.0
+      POINTS_NUMBER: 10
+      SEED: 1
+    results:
+      OUTPUT:
+        name: expected/randompointsonlines_gmin2.gml
+        type: vector
+
+  - algorithm: native:randompointsonlines
+    name: Random points on lines, min distance 2, seed 1, no attributes, multilines - one empty geom
+    params:
+      INCLUDE_LINE_ATTRIBUTES: false
+      INPUT:
+        name: multilines.gml
+        type: vector
+      MAX_TRIES_PER_POINT: 10
+      MIN_DISTANCE: 2.0
+      MIN_DISTANCE_GLOBAL: 0.0
+      POINTS_NUMBER: 10
+      SEED: 1
+    results:
+      OUTPUT:
+        name: expected/randompointsonlines_min2.gml
+        type: vector
+
+  - algorithm: native:randompointsonlines
+    name: Random points on lines, min distance 2, global min distance 2, seed 1, attributes, multilines - one empty geom
+    params:
+      INCLUDE_LINE_ATTRIBUTES: true
+      INPUT:
+        name: multilines.gml
+        type: vector
+      MAX_TRIES_PER_POINT: 10
+      MIN_DISTANCE: 2.0
+      MIN_DISTANCE_GLOBAL: 2.0
+      POINTS_NUMBER: 10
+      SEED: 1
+    results:
+      OUTPUT:
+        name: expected/randompointsonlines_min2_gmin2.gml
+        type: vector
+
+  - algorithm: native:randomextract
     name: Random extract by number
     params:
       INPUT:
@@ -592,7 +742,7 @@ tests:
         name: points_weighted.gml
         compare: false
 
-  - algorithm: qgis:randomextract
+  - algorithm: native:randomextract
     name: Random extract by percentage
     params:
       INPUT:
@@ -637,7 +787,7 @@ tests:
         hash: f09384c64f56286ec4146a7b9a679cea7c6711ec4c7d77eec054e364
         type: rasterhash
 
-  - algorithm: qgis:rasterlayerstatistics
+  - algorithm: native:rasterlayerstatistics
     name: Raster layer statistics
     params:
       INPUT:
@@ -649,13 +799,13 @@ tests:
         name: raster_statistics.html
         type: regex
         rules:
-          - 'Minimum value: 85.0'
-          - 'Maximum value: 243.0'
-          - 'Range: 158.0'
-          - 'Sum: 19213301.982429504'
-          - 'Mean value: 147.17197994967066'
+          - 'Minimum value: 85'
+          - 'Maximum value: 243'
+          - 'Range: 158'
+          - 'Sum: 19213301.9824295'
+          - 'Mean value: 147.1719799496707'
           - 'Standard deviation: 43.9618116337985'
-          - 'Sum of the squares: 252304334.52061242'
+          - 'Sum of the squares: 252304334.5206124'
 
   - algorithm: qgis:rasterlayeruniquevaluesreport
     name: Raster layer unique values report
@@ -720,7 +870,7 @@ tests:
         name: expected/displaced_points.gml
         type: vector
 
-  - algorithm: qgis:generatepointspixelcentroidsinsidepolygons
+  - algorithm: native:generatepointspixelcentroidsinsidepolygons
     name: Pixel centroids inside polygon
     params:
       INPUT_RASTER:
@@ -765,6 +915,22 @@ tests:
         name: expected/field_calculator_points.gml
         type: vector
 
+  - algorithm: native:fieldcalculator
+    name: Test field calculator points (new API)
+    params:
+      FIELD_LENGTH: 10
+      FIELD_PRECISION: 3
+      FIELD_TYPE: 0
+      FORMULA: "\"id2\" *2"
+      INPUT:
+        name: points.gml
+        type: vector
+      NEW_FIELD_NAME: test
+    results:
+      OUTPUT:
+        name: expected/field_calculator_points.gml
+        type: vector
+
   - algorithm: qgis:advancedpythonfieldcalculator
     name: Test advanced python calculator
     params:
@@ -799,7 +965,7 @@ tests:
         name: expected/execute_sql.gml
         type: vector
 
-  - algorithm: qgis:polygonfromlayerextent
+  - algorithm: native:polygonfromlayerextent
     name: Polygon from raster extent
     params:
       INPUT:
@@ -1166,7 +1332,7 @@ tests:
           fields:
             fid: skip
 
-  - algorithm: qgis:joinattributesbylocation
+  - algorithm: native:joinattributesbylocation
     name: Join by location (intersects)
     params:
       DISCARD_NONMATCHING: false
@@ -1192,7 +1358,7 @@ tests:
             fid: skip
             fid_2: skip
 
-  - algorithm: qgis:joinattributesbylocation
+  - algorithm: native:joinattributesbylocation
     name: Join by location with prefix
     params:
       DISCARD_NONMATCHING: false
@@ -1219,7 +1385,7 @@ tests:
             fid: skip
             j_fid: skip
 
-  - algorithm: qgis:joinattributesbylocation
+  - algorithm: native:joinattributesbylocation
     name: Join by location (intersects), discard no match
     params:
       DISCARD_NONMATCHING: true
@@ -1245,7 +1411,7 @@ tests:
             fid: skip
             fid_2: skip
 
-  - algorithm: qgis:joinattributesbylocation
+  - algorithm: native:joinattributesbylocation
     name: Join by location (intersects), first match only
     params:
       DISCARD_NONMATCHING: false
@@ -1271,7 +1437,7 @@ tests:
             id: skip # can't check these - order of match is not predictable
             id2: skip
 
-  - algorithm: qgis:joinattributesbylocation
+  - algorithm: native:joinattributesbylocation
     name: Join by location (intersects), first match only, discard no match
     params:
       DISCARD_NONMATCHING: true
@@ -1297,7 +1463,7 @@ tests:
             id: skip # can't check these - order of match is not predictable
             id2: skip
 
-  - algorithm: qgis:joinattributesbylocation
+  - algorithm: native:joinattributesbylocation
     name: Join by location (intersects), subset of fields
     params:
       DISCARD_NONMATCHING: false
@@ -1324,7 +1490,7 @@ tests:
             fid: skip
             fid_2: skip
 
-  - algorithm: qgis:joinattributesbylocation
+  - algorithm: native:joinattributesbylocation
     name: Join by location (touches)
     params:
       DISCARD_NONMATCHING: true
@@ -1350,7 +1516,7 @@ tests:
             fid: skip
             fid_2: skip
 
-  - algorithm: qgis:joinattributesbylocation
+  - algorithm: native:joinattributesbylocation
     name: Join by location, unjoinable
     params:
       DISCARD_NONMATCHING: false
@@ -1369,7 +1535,7 @@ tests:
         name: expected/join_by_location_unjoinable.gml
         type: vector
 
-  - algorithm: qgis:joinattributesbylocation
+  - algorithm: native:joinattributesbylocation
     name: Join by location (equals)
     params:
       DISCARD_NONMATCHING: true
@@ -1388,6 +1554,122 @@ tests:
     results:
       OUTPUT:
         name: expected/join_by_location_equals.gml
+        type: vector
+
+  - algorithm: native:joinattributesbylocation
+    name: Join by location, largest overlap, polygons to lines
+    params:
+      DISCARD_NONMATCHING: false
+      INPUT:
+        name: polys.gml|layername=polys2
+        type: vector
+      JOIN:
+        name: custom/join_lines_crossing_multiple_polygons.gml|layername=join_lines_crossing_multiple_polygons
+        type: vector
+      METHOD: 2
+      PREDICATE:
+      - 0
+      PREFIX: ''
+    results:
+      OUTPUT:
+        name: expected/join_polys_to_lines_largest.gml
+        type: vector
+
+  - algorithm: native:joinattributesbylocation
+    name: Join by location, largest overlap, polygons to lines, discard no matching
+    params:
+      DISCARD_NONMATCHING: true
+      INPUT:
+        name: polys.gml|layername=polys2
+        type: vector
+      JOIN:
+        name: custom/join_lines_crossing_multiple_polygons.gml|layername=join_lines_crossing_multiple_polygons
+        type: vector
+      METHOD: 2
+      PREDICATE:
+      - 0
+      PREFIX: ''
+    results:
+      OUTPUT:
+        name: expected/join_polys_to_lines_largest_discard.gml
+        type: vector
+
+  - algorithm: native:joinattributesbylocation
+    name: Join by location, largest overlap, polygons to lines, save no matching
+    params:
+      DISCARD_NONMATCHING: true
+      INPUT:
+        name: polys.gml|layername=polys2
+        type: vector
+      JOIN:
+        name: custom/join_lines_crossing_multiple_polygons.gml|layername=join_lines_crossing_multiple_polygons
+        type: vector
+      METHOD: 2
+      PREDICATE:
+      - 0
+      PREFIX: ''
+    results:
+      NON_MATCHING:
+        name: expected/join_polys_to_lines_largest_unjoined.gml
+        type: vector
+
+  - algorithm: native:joinattributesbylocation
+    name: Join by location, largest overlap, polygons to polygons, subset of fields
+    params:
+      DISCARD_NONMATCHING: false
+      INPUT:
+        name: polys.gml|layername=polys2
+        type: vector
+      JOIN:
+        name: custom/polygons_crossing_multiple_polygons.gml|layername=polygons_crossing_multiple_polygons
+        type: vector
+      JOIN_FIELDS:
+      - name
+      METHOD: 2
+      PREDICATE:
+      - 0
+      PREFIX: ''
+    results:
+      OUTPUT:
+        name: expected/join_polys_to_polys_largest.gml
+        type: vector
+
+  - algorithm: native:joinattributesbylocation
+    name: Join by location, largest overlap, lines to polygons
+    params:
+      DISCARD_NONMATCHING: false
+      INPUT:
+        name: custom/join_lines_crossing_multiple_polygons.gml|layername=join_lines_crossing_multiple_polygons
+        type: vector
+      JOIN:
+        name: polys.gml|layername=polys2
+        type: vector
+      METHOD: 2
+      PREDICATE:
+      - 0
+      PREFIX: ''
+    results:
+      OUTPUT:
+        name: expected/join_lines_to_polys_largest.gml
+        type: vector
+
+  - algorithm: native:joinattributesbylocation
+    name: Join by location, largest overlap, lines to lines
+    params:
+      DISCARD_NONMATCHING: false
+      INPUT:
+        name: custom/join_lines_crossing_multiple_lines.gml|layername=join_lines_crossing_multiple_lines
+        type: vector
+      JOIN:
+        name: custom/join_lines_crossing_multiple_polygons.gml|layername=join_lines_crossing_multiple_polygons
+        type: vector
+      METHOD: 2
+      PREDICATE:
+      - 0
+      PREFIX: ''
+    results:
+      OUTPUT:
+        name: expected/join_lines_to_lines_largest.gml
         type: vector
 
   - algorithm: qgis:joinbylocationsummary
@@ -1876,5 +2158,54 @@ tests:
             __all__:
               precision: 7
 
+  - algorithm: qgis:buildvirtualvector
+    name: Build virtual vector
+    params:
+      INPUT:
+        params:
+        - name: lines.gml|layername=lines
+          type: vector
+        - name: multilines.gml|layername=multilines
+          type: vector
+        type: multi
+      UNIONED: true
+    results:
+      OUTPUT:
+        name: expected/vrt_lines.vrt
+        type: regex
+        rules:
+          - '<SrcDataSource>.*\/lines\.gml</SrcDataSource>'
+          - '<SrcLayer>lines</SrcLayer>'
+          - '<SrcDataSource>.*\/multilines\.gml</SrcDataSource>'
+          - '<SrcLayer>multilines</SrcLayer>'
+
+  - algorithm: native:zonalstatisticsfb
+    name: Test (native:zonalstatisticsfb)
+    params:
+      COLUMN_PREFIX: stats_
+      INPUT:
+        name: custom/zonal_stats.shp
+        type: vector
+      INPUT_RASTER:
+        name: custom/dem_zones.tif
+        type: raster
+      RASTER_BAND: 1
+      STATISTICS:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+    results:
+      OUTPUT:
+        name: expected/stats.geojson
+        type: vector
 
 # See ../README.md for a description of the file format

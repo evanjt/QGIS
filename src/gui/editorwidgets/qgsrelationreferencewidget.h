@@ -19,6 +19,7 @@
 #include "qgsattributeeditorcontext.h"
 #include "qgis_sip.h"
 #include "qgsfeature.h"
+#include "qobjectuniqueptr.h"
 
 #include <QComboBox>
 #include <QToolButton>
@@ -32,7 +33,9 @@ class QgsVectorLayerTools;
 class QgsMapCanvas;
 class QgsMessageBar;
 class QgsHighlight;
+class QgsMapTool;
 class QgsMapToolIdentifyFeature;
+class QgsMapToolDigitizeFeature;
 class QgsMessageBarItem;
 class QgsFeatureListComboBox;
 class QgsCollapsibleGroupBox;
@@ -109,6 +112,11 @@ class GUI_EXPORT QgsRelationReferenceWidget : public QWidget
     */
     QVariantList foreignKeys() const;
 
+    /**
+     * Sets the editor \a context
+     * \note if context cadDockWidget is null, it won't be possible to digitize
+     * the geometry of a referenced feature from this widget
+     */
     void setEditorContext( const QgsAttributeEditorContext &context, QgsMapCanvas *canvas, QgsMessageBar *messageBar );
 
     //! determines if the form of the related feature will be shown
@@ -150,6 +158,17 @@ class GUI_EXPORT QgsRelationReferenceWidget : public QWidget
     void setChainFilters( bool chainFilters );
 
     /**
+     * Returns the currently set filter expression.
+     */
+    QString filterExpression() const { return mFilterExpression; };
+
+    /**
+     * If not empty, will be used as filter expression.
+     * Only if this evaluates to TRUE, the value will be shown.
+     */
+    void setFilterExpression( const QString &filterExpression );
+
+    /**
      * Returns the related feature (from the referenced layer)
      * if no feature is related, it returns an invalid feature
      */
@@ -180,6 +199,61 @@ class GUI_EXPORT QgsRelationReferenceWidget : public QWidget
      * \since QGIS 3.10
      */
     QgsRelation relation() const;
+
+    /**
+     * Set the current form feature (from the referencing layer)
+     *
+     * \since QGIS 3.10
+     */
+    void setFormFeature( const QgsFeature &formFeature );
+
+    /**
+     * Returns the public data source of the referenced layer
+     * \since QGIS 3.12
+     */
+    QString referencedLayerDataSource() const;
+
+    /**
+     * Set the public data source of the referenced layer to \a referencedLayerDataSource
+     * \since QGIS 3.12
+     */
+    void setReferencedLayerDataSource( const QString &referencedLayerDataSource );
+
+    /**
+     * Returns the data provider key of the referenced layer
+     * \since QGIS 3.12
+     */
+    QString referencedLayerProviderKey() const;
+
+    /**
+     * Set the data provider key of the referenced layer to \a referencedLayerProviderKey
+     * \since QGIS 3.12
+     */
+    void setReferencedLayerProviderKey( const QString &referencedLayerProviderKey );
+
+    /**
+     * Returns the id of the referenced layer
+     * \since QGIS 3.12
+     */
+    QString referencedLayerId() const;
+
+    /**
+     * Set the id of the referenced layer to \a referencedLayerId
+     * \since QGIS 3.12
+     */
+    void setReferencedLayerId( const QString &referencedLayerId );
+
+    /**
+     * Returns the name of the referenced layer
+     * \since QGIS 3.12
+     */
+    QString referencedLayerName() const;
+
+    /**
+     * Set the name of the referenced layer to \a referencedLayerName
+     * \since QGIS 3.12
+     */
+    void setReferencedLayerName( const QString &referencedLayerName );
 
   public slots:
     //! open the form of the related feature in a new dialog
@@ -215,17 +289,14 @@ class GUI_EXPORT QgsRelationReferenceWidget : public QWidget
     void deleteHighlight();
     void comboReferenceChanged( int index );
     void featureIdentified( const QgsFeature &feature );
+    void setMapTool( QgsMapTool *mapTool );
     void unsetMapTool();
     void mapToolDeactivated();
     void filterChanged();
     void addEntry();
     void updateAddEntryButton();
-
-    /**
-     * Updates the FK index as soon as the underlying model is updated when
-     * the chainFilter option is activated.
-     */
-    void updateIndex();
+    void entryAdded( const QgsFeature &f );
+    void onKeyPressed( QKeyEvent *e );
 
   private:
     void highlightFeature( QgsFeature f = QgsFeature(), CanvasExtent canvasExtent = Fixed );
@@ -239,17 +310,21 @@ class GUI_EXPORT QgsRelationReferenceWidget : public QWidget
     QgsMessageBar *mMessageBar = nullptr;
     QVariantList mForeignKeys;
     QgsFeature mFeature;
+    QgsFeature mFormFeature;
     // Index of the referenced layer key
     QStringList mReferencedFields;
     bool mAllowNull = true;
     QgsHighlight *mHighlight = nullptr;
-    QgsMapToolIdentifyFeature *mMapTool = nullptr;
+    QgsMapTool *mCurrentMapTool = nullptr;
+    QObjectUniquePtr<QgsMapToolIdentifyFeature> mMapToolIdentify;
+    QObjectUniquePtr<QgsMapToolDigitizeFeature> mMapToolDigitize;
     QgsMessageBarItem *mMessageBarItem = nullptr;
     QgsAttributeForm *mReferencedAttributeForm = nullptr;
     QgsVectorLayer *mReferencedLayer = nullptr;
     QgsVectorLayer *mReferencingLayer = nullptr;
     QgsFeatureListComboBox *mComboBox = nullptr;
     QList<QComboBox *> mFilterComboBoxes;
+    QString mFilterExpression;
     QWidget *mWindowWidget = nullptr;
     bool mShown = false;
     QgsRelation mRelation;
@@ -266,6 +341,10 @@ class GUI_EXPORT QgsRelationReferenceWidget : public QWidget
     bool mOpenFormButtonVisible = true;
     bool mChainFilters = false;
     bool mAllowAddFeatures = false;
+    QString mReferencedLayerId;
+    QString mReferencedLayerName;
+    QString mReferencedLayerDataSource;
+    QString mReferencedLayerProviderKey;
 
     // UI
     QVBoxLayout *mTopLayout = nullptr;

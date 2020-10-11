@@ -75,6 +75,20 @@ Returns the global processing gui registry, used for registering the GUI behavio
 .. versionadded:: 3.2
 %End
 
+    static QgsNumericFormatGuiRegistry *numericFormatGuiRegistry() /KeepReference/;
+%Docstring
+Returns the global numeric format gui registry, used for registering the GUI widgets associated with :py:class:`QgsNumericFormats`.
+
+.. versionadded:: 3.12
+%End
+
+    static QgsCodeEditorColorSchemeRegistry *codeEditorColorSchemeRegistry() /KeepReference/;
+%Docstring
+Returns the global code editor color scheme registry, used for registering the color schemes for QgsCodeEditor widgets.
+
+.. versionadded:: 3.16
+%End
+
     static QgsProcessingRecentAlgorithmLog *processingRecentAlgorithmLog();
 %Docstring
 Returns the global processing recent algorithm log, used for tracking recently used processing algorithms.
@@ -107,7 +121,7 @@ Returns the registry of GUI-related components of data providers
     static void enableAutoGeometryRestore( QWidget *widget, const QString &key = QString() );
 %Docstring
 Register the widget to allow its position to be automatically saved and restored when open and closed.
-Use this to avoid needing to call saveGeometry() and restoreGeometry() on your widget.
+Use this to avoid needing to call :py:func:`~QgsGui.saveGeometry` and :py:func:`~QgsGui.restoreGeometry` on your widget.
 %End
 
     static QgsWindowManagerInterface *windowManager();
@@ -144,6 +158,36 @@ Returns the platform's HIG flags.
 %End
 
     ~QgsGui();
+
+    static QColor sampleColor( QPoint point );
+%Docstring
+Samples the color on screen at the specified global ``point`` (pixel).
+
+.. versionadded:: 3.10
+%End
+
+    static QScreen *findScreenAt( QPoint point );
+%Docstring
+Returns the screen at the given global ``point`` (pixel).
+
+.. versionadded:: 3.10
+%End
+
+
+
+  signals:
+
+    void optionsChanged();
+%Docstring
+This signal is emitted whenever the application options have been changed.
+
+This signal is a "blanket" signal, and will be emitted whenever the options dialog
+has been accepted regardless of whether or not individual settings are changed.
+It is designed as a "last resort" fallback only, allowing widgets to respond
+to possible settings changes.
+
+.. versionadded:: 3.16
+%End
 
   private:
     QgsGui( const QgsGui &other );

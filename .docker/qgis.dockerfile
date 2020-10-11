@@ -1,29 +1,35 @@
 
-# CACHE_TAG is provided by Docker cloud
 # see https://docs.docker.com/docker-cloud/builds/advanced/
 # using ARG in FROM requires min v17.05.0-ce
-ARG DOCKER_TAG=latest
+ARG DOCKER_DEPS_TAG=latest
 
-FROM  qgis/qgis3-build-deps:${DOCKER_TAG}
+FROM  qgis/qgis3-build-deps:${DOCKER_DEPS_TAG} AS BUILDER
 MAINTAINER Denis Rouzaud <denis@opengis.ch>
 
 LABEL Description="Docker container with QGIS" Vendor="QGIS.org" Version="1.1"
 
-ARG CC=/usr/lib/ccache/clang
-ARG CXX=/usr/lib/ccache/clang++
+# build timeout in seconds, so no timeout by default
+ARG BUILD_TIMEOUT=360000
+
+ARG CC=/usr/lib/ccache/gcc
+ARG CXX=/usr/lib/ccache/g++
 ENV LANG=C.UTF-8
 
-COPY . /usr/src/QGIS
+COPY . /QGIS
 
 # If this directory is changed, also adapt script.sh which copies the directory
-RUN mkdir -p /usr/src/.ccache_image_build
-ENV CCACHE_DIR=/usr/src/.ccache_image_build
+# if ccache directory is not provided with the source
+RUN mkdir -p /QGIS/.ccache_image_build
+ENV CCACHE_DIR=/QGIS/.ccache_image_build
 RUN ccache -M 1G
 RUN ccache -s
 
-WORKDIR /usr/src/QGIS/build
+RUN echo "ccache_dir: "$(du -h --max-depth=0 ${CCACHE_DIR})
 
-RUN cmake \
+WORKDIR /QGIS/build
+
+RUN SUCCESS=OK \
+  && cmake \
   -GNinja \
   -DUSE_CCACHE=OFF \
   -DCMAKE_BUILD_TYPE=Release \
@@ -32,6 +38,7 @@ RUN cmake \
   -DWITH_SERVER=ON \
   -DWITH_3D=ON \
   -DWITH_BINDINGS=ON \
+  -DWITH_CUSTOM_WIDGETS=ON \
   -DBINDINGS_GLOBAL_INSTALL=ON \
   -DWITH_STAGED_PLUGINS=ON \
   -DWITH_GRASS=ON \
@@ -42,11 +49,15 @@ RUN cmake \
   -DWITH_APIDOC=OFF \
   -DWITH_ASTYLE=OFF \
   -DQT5_3DEXTRA_LIBRARY="/usr/lib/x86_64-linux-gnu/libQt53DExtras.so" \
-  -DQT5_3DEXTRA_INCLUDE_DIR="/usr/src/QGIS/external/qt3dextra-headers" \
-  -DCMAKE_PREFIX_PATH="/usr/src/QGIS/external/qt3dextra-headers/cmake" \
- .. \
- && ninja install \
- && rm -rf /usr/src/QGIS
+  -DQT5_3DEXTRA_INCLUDE_DIR="/QGIS/external/qt3dextra-headers" \
+  -DQt53DExtras_DIR="/QGIS/external/qt3dextra-headers/cmake/Qt53DExtras" \
+  -DCMAKE_PREFIX_PATH="/QGIS/external/qt3dextra-headers" \
+  .. \
+  && ninja install || SUCCESS=FAILED \
+  && echo "$SUCCESS" > /QGIS/build_exit_value
+
+# Additional run-time dependencies
+RUN pip3 install jinja2 pygments
 
 ################################################################################
 # Python testing environment setup
@@ -66,7 +77,6 @@ COPY .docker/qgis_resources/supervisor/ /etc/supervisor
 # - built from git
 # needed to find PyQt wrapper provided by QGIS
 ENV PYTHONPATH=/usr/share/qgis/python/:/usr/share/qgis/python/plugins:/usr/lib/python3/dist-packages/qgis:/usr/share/qgis/python/qgis
-
 
 WORKDIR /
 

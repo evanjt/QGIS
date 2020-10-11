@@ -18,6 +18,7 @@
 #include "qgisapp.h"
 #include "qgsversioninfo.h"
 #include "qgsapplication.h"
+#include "qgsfocuskeeper.h"
 #include "qgssettings.h"
 #include "qgsgui.h"
 #include "qgsnative.h"
@@ -27,6 +28,11 @@
 #include "qgsprojectlistitemdelegate.h"
 #include "qgsnewsfeedmodel.h"
 #include "qgsnewsfeedparser.h"
+
+#include "qgsprojectstorage.h"
+#include "qgsprojectstorageguiprovider.h"
+#include "qgsprojectstorageguiregistry.h"
+#include "qgsprojectstorageregistry.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -44,7 +50,6 @@ QgsWelcomePage::QgsWelcomePage( bool skipVersionCheck, QWidget *parent )
   QgsSettings settings;
 
   QVBoxLayout *mainLayout = new QVBoxLayout;
-  mainLayout->setMargin( 0 );
   mainLayout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( mainLayout );
 
@@ -54,7 +59,6 @@ QgsWelcomePage::QgsWelcomePage( bool skipVersionCheck, QWidget *parent )
   QWidget *leftContainer = new QWidget();
   QVBoxLayout *leftLayout = new QVBoxLayout;
   leftLayout->setContentsMargins( 0, 0, 0, 0 );
-  leftLayout->setMargin( 0 );
 
   int titleSize = static_cast<int>( QApplication::fontMetrics().height() * 1.4 );
   mRecentProjectsTitle = new QLabel( QStringLiteral( "<div style='font-size:%1px;font-weight:bold'>%2</div>" ).arg( QString::number( titleSize ), tr( "Recent Projects" ) ) );
@@ -84,7 +88,6 @@ QgsWelcomePage::QgsWelcomePage( bool skipVersionCheck, QWidget *parent )
   QWidget *rightContainer = new QWidget();
   QVBoxLayout *rightLayout = new QVBoxLayout;
   rightLayout->setContentsMargins( 0, 0, 0, 0 );
-  rightLayout->setMargin( 0 );
 
   if ( !QgsSettings().value( QStringLiteral( "%1/disabled" ).arg( QgsNewsFeedParser::keyForFeed( QStringLiteral( FEED_URL ) ) ), false, QgsSettings::Core ).toBool() )
   {
@@ -93,7 +96,6 @@ QgsWelcomePage::QgsWelcomePage( bool skipVersionCheck, QWidget *parent )
     QWidget *newsContainer = new QWidget();
     QVBoxLayout *newsLayout = new QVBoxLayout();
     newsLayout->setContentsMargins( 0, 0, 0, 0 );
-    newsLayout->setMargin( 0 );
     mNewsFeedTitle = new QLabel( QStringLiteral( "<div style='font-size:%1px;font-weight:bold'>%2</div>" ).arg( titleSize ).arg( tr( "News" ) ) );
     mNewsFeedTitle->setContentsMargins( titleSize / 2, titleSize / 6, 0, 0 );
     newsLayout->addWidget( mNewsFeedTitle, 0 );
@@ -121,7 +123,6 @@ QgsWelcomePage::QgsWelcomePage( bool skipVersionCheck, QWidget *parent )
   QWidget *templateContainer = new QWidget();
   QVBoxLayout *templateLayout = new QVBoxLayout();
   templateLayout->setContentsMargins( 0, 0, 0, 0 );
-  templateLayout->setMargin( 0 );
   QLabel *templatesTitle = new QLabel( QStringLiteral( "<div style='font-size:%1px;font-weight:bold'>%2</div>" ).arg( titleSize ).arg( tr( "Project Templates" ) ) );
   templatesTitle->setContentsMargins( titleSize / 2, titleSize / 6, 0, 0 );
   templateLayout->addWidget( templatesTitle, 0 );
@@ -248,6 +249,7 @@ void QgsWelcomePage::showContextMenuForProjects( QPoint point )
   if ( path.isEmpty() )
     return;
 
+  QgsProjectStorage *storage = QgsApplication::projectStorageRegistry()->projectStorageFromUri( path );
   bool enabled = mRecentProjectsModel->flags( index ) & Qt::ItemIsEnabled;
 
   QMenu *menu = new QMenu( this );
@@ -274,12 +276,22 @@ void QgsWelcomePage::showContextMenuForProjects( QPoint point )
       } );
       menu->addAction( pinAction );
     }
-    QAction *openFolderAction = new QAction( tr( "Open Directory…" ), menu );
-    connect( openFolderAction, &QAction::triggered, this, [path]
+
+    if ( storage )
     {
-      QgsGui::instance()->nativePlatformInterface()->openFileExplorerAndSelectFile( path );
-    } );
-    menu->addAction( openFolderAction );
+      path = storage->filePath( path );
+    }
+
+    if ( !path.isEmpty() )
+    {
+      QAction *openFolderAction = new QAction( tr( "Open Directory…" ), menu );
+      connect( openFolderAction, &QAction::triggered, this, [path]
+      {
+        QgsFocusKeeper focusKeeper;
+        QgsGui::instance()->nativePlatformInterface()->openFileExplorerAndSelectFile( path );
+      } );
+      menu->addAction( openFolderAction );
+    }
   }
   else
   {
@@ -290,15 +302,30 @@ void QgsWelcomePage::showContextMenuForProjects( QPoint point )
     } );
     menu->addAction( rescanAction );
 
-    // add an entry to open the closest existing path to the original project file location
-    // to help users re-find moved/renamed projects!
-    const QString closestPath = QgsFileUtils::findClosestExistingPath( path );
-    QAction *openFolderAction = new QAction( tr( "Open “%1”…" ).arg( QDir::toNativeSeparators( closestPath ) ), menu );
-    connect( openFolderAction, &QAction::triggered, this, [closestPath]
+    bool showClosestPath = storage ? false : true;
+    if ( storage && ( storage->type() == QLatin1String( "geopackage" ) ) )
     {
-      QDesktopServices::openUrl( QUrl::fromLocalFile( closestPath ) );
-    } );
-    menu->addAction( openFolderAction );
+      QRegularExpression reGpkg( "^(geopackage:)([^\?]+)\?(.+)$", QRegularExpression::CaseInsensitiveOption );
+      QRegularExpressionMatch matchGpkg = reGpkg.match( path );
+      if ( matchGpkg.hasMatch() )
+      {
+        path = matchGpkg.captured( 2 );
+        showClosestPath = true;
+      }
+    }
+
+    if ( showClosestPath )
+    {
+      // add an entry to open the closest existing path to the original project file or geopackage location
+      // to help users re-find moved/renamed projects!
+      const QString closestPath = QgsFileUtils::findClosestExistingPath( path );
+      QAction *openFolderAction = new QAction( tr( "Open “%1”…" ).arg( QDir::toNativeSeparators( closestPath ) ), menu );
+      connect( openFolderAction, &QAction::triggered, this, [closestPath]
+      {
+        QDesktopServices::openUrl( QUrl::fromLocalFile( closestPath ) );
+      } );
+      menu->addAction( openFolderAction );
+    }
   }
   QAction *removeProjectAction = new QAction( tr( "Remove from List" ), menu );
   connect( removeProjectAction, &QAction::triggered, this, [this, index]
@@ -406,6 +433,11 @@ void QgsWelcomePage::updateNewsFeedVisibility()
   else
   {
     mSplitter2->restoreState( QgsSettings().value( QStringLiteral( "Windows/WelcomePage/SplitState2" ), QVariant(), QgsSettings::App ).toByteArray() );
+    if ( mSplitter2->sizes().first() == 0 )
+    {
+      int splitSize = mSplitter2->height() / 2;
+      mSplitter2->setSizes( QList< int > { splitSize, splitSize} );
+    }
   }
 }
 

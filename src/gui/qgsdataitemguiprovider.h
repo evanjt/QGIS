@@ -18,6 +18,7 @@
 
 #include "qgis_gui.h"
 #include "qgis_sip.h"
+#include "qgis.h"
 #include <QList>
 #include <QWidget>
 #include <QMimeData>
@@ -163,6 +164,25 @@ class GUI_EXPORT QgsDataItemGuiProvider
      * \since QGIS 3.10
      */
     virtual bool handleDrop( QgsDataItem *item, QgsDataItemGuiContext context, const QMimeData *data, Qt::DropAction action );
+
+    /**
+     * Creates source widget from data item for QgsBrowserPropertiesWidget
+     * By default it returns nullptr.
+     * Caller takes responsibility of deleting created.
+     *
+     * The function is replacement of QgsDataItem::paramWidget()
+     *
+     * \since QGIS 3.10
+     */
+    virtual QWidget *createParamWidget( QgsDataItem *item, QgsDataItemGuiContext context ) SIP_FACTORY;
+
+    /**
+     * Notify the user showing a \a message with \a title and \a level
+     * If the context has a message bar the message will be shown in the message bar
+     * else a message dialog will be used.
+     * \since QGIS 3.16
+     */
+    static void notify( const QString &title, const QString &message, QgsDataItemGuiContext context, Qgis::MessageLevel level = Qgis::Info );
 };
 
 #endif // QGSDATAITEMGUIPROVIDER_H

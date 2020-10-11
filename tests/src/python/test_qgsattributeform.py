@@ -14,7 +14,6 @@ __author__ = 'Alessandro Pasotti'
 __date__ = '2019-06-06'
 __copyright__ = 'Copyright 2019, The QGIS Project'
 
-
 from qgis.testing import start_app, unittest
 from qgis.core import (
     QgsFields,
@@ -28,8 +27,8 @@ from qgis.gui import (
     QgsAttributeForm,
     QgsGui,
     QgsEditorWidgetWrapper,
+    QgsMapCanvas
 )
-
 
 QGISAPP = start_app()
 
@@ -38,7 +37,8 @@ class TestQgsAttributeForm(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        QgsGui.editorWidgetRegistry().initEditors()
+        cls.mCanvas = QgsMapCanvas()
+        QgsGui.editorWidgetRegistry().initEditors(cls.mCanvas)
 
     @classmethod
     def createLayerWithOnePoint(cls, field_type):
@@ -109,7 +109,7 @@ class TestQgsAttributeForm(unittest.TestCase):
             'double precision': 123.45,
             'text': 'lorem ipsum',
             'bool': True,
-            #'binary'
+            # 'binary'
         }
 
         for field_type, value in field_types.items():

@@ -50,6 +50,7 @@ class TestQgsLayoutLabel : public QObject
     void featureEvaluationUsingContext();
     // test page expressions
     void pageEvaluation();
+    void pageSizeEvaluation();
     void marginMethods(); //tests getting/setting margins
     void render();
     void renderAsHtml();
@@ -132,7 +133,7 @@ void TestQgsLayoutLabel::evaluation()
     QDate now = QDate::currentDate();
     int dd = now.day();
 
-    QString expected = "__" + QStringLiteral( "%1" ).arg( dd + 1 ) + "(ok)__";
+    QString expected = "__" + QString::number( dd + 1 ) + "(ok)__";
     label->setText( QStringLiteral( "__[%$CURRENT_DATE(dd) + 1%](ok)__" ) );
     QString evaluated = label->currentText();
     QCOMPARE( evaluated, expected );
@@ -140,7 +141,7 @@ void TestQgsLayoutLabel::evaluation()
   {
     // expression evaluation (without feature)
     QString expected = QStringLiteral( "__[NAME_1]42__" );
-    label->setText( QStringLiteral( "__[%\"NAME_1\"%][%21*2%]__" ) );
+    label->setText( QStringLiteral( "__[%try(\"NAME_1\", '[NAME_1]')%][%21*2%]__" ) );
     QString evaluated = label->currentText();
     QCOMPARE( evaluated, expected );
   }
@@ -235,6 +236,34 @@ void TestQgsLayoutLabel::pageEvaluation()
   }
 }
 
+void TestQgsLayoutLabel::pageSizeEvaluation()
+{
+  QgsLayout l( QgsProject::instance() );
+  l.initializeDefaults();
+
+  QgsLayoutItemLabel *label = new QgsLayoutItemLabel( &l );
+  label->setMargin( 1 );
+  label->setText( QStringLiteral( "[%array_to_string(@layout_pageoffsets)%]" ) );
+  l.addLayoutItem( label );
+
+  {
+    QString evaluated = label->currentText();
+    QString expected = QStringLiteral( "0" );
+    QCOMPARE( evaluated, expected );
+  }
+
+  // add a page and re-evaluate
+  QgsLayoutItemPage *page2 = new QgsLayoutItemPage( &l );
+  page2->setPageSize( "A4", QgsLayoutItemPage::Landscape );
+  l.pageCollection()->addPage( page2 );
+
+  {
+    QString evaluated = label->currentText();
+    QString expected = QStringLiteral( "0,220" );
+    QCOMPARE( evaluated, expected );
+  }
+}
+
 void TestQgsLayoutLabel::marginMethods()
 {
   QgsLayout l( QgsProject::instance() );
@@ -299,6 +328,7 @@ void TestQgsLayoutLabel::renderAsHtmlRelative()
 {
   QgsLayout l( QgsProject::instance() );
   l.initializeDefaults();
+  l.renderContext().mIsPreviewRender = false;
   QgsLayoutItemLabel *label = new QgsLayoutItemLabel( &l );
   label->setMargin( 1 );
   l.addLayoutItem( label );

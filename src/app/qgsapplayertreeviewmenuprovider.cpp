@@ -12,9 +12,9 @@
  *   (at your option) any later version.                                   *
  *                                                                         *
  ***************************************************************************/
+#include <QClipboard>
 
 #include "qgsapplayertreeviewmenuprovider.h"
-
 
 #include "qgisapp.h"
 #include "qgsapplication.h"
@@ -22,6 +22,7 @@
 #include "qgscolorwidgets.h"
 #include "qgscolorschemeregistry.h"
 #include "qgscolorswatchgrid.h"
+#include "qgsgui.h"
 #include "qgslayertree.h"
 #include "qgslayertreemodel.h"
 #include "qgslayertreemodellegendnode.h"
@@ -41,15 +42,14 @@
 #include "qgsmaplayerstylecategoriesmodel.h"
 #include "qgssymbollayerutils.h"
 #include "qgsxmlutils.h"
+#include "qgsmessagebar.h"
 
-#include <QClipboard>
 
 QgsAppLayerTreeViewMenuProvider::QgsAppLayerTreeViewMenuProvider( QgsLayerTreeView *view, QgsMapCanvas *canvas )
   : mView( view )
   , mCanvas( canvas )
 {
 }
-
 
 QMenu *QgsAppLayerTreeViewMenuProvider::createContextMenu()
 {
@@ -105,13 +105,20 @@ QMenu *QgsAppLayerTreeViewMenuProvider::createContextMenu()
 
       menu->addAction( actions->actionMutuallyExclusiveGroup( menu ) );
 
-      menu->addAction( actions->actionCheckAndAllChildren( menu ) );
+      if ( QAction *checkAll = actions->actionCheckAndAllChildren( menu ) )
+        menu->addAction( checkAll );
 
-      menu->addAction( actions->actionUncheckAndAllChildren( menu ) );
+      if ( QAction *unCheckAll = actions->actionUncheckAndAllChildren( menu ) )
+        menu->addAction( unCheckAll );
 
       if ( !( mView->selectedNodes( true ).count() == 1 && idx.row() == 0 ) )
       {
         menu->addAction( actions->actionMoveToTop( menu ) );
+      }
+
+      if ( !( mView->selectedNodes( true ).count() == 1 && idx.row() == idx.model()->rowCount() - 1 ) )
+      {
+        menu->addAction( actions->actionMoveToBottom( menu ) );
       }
 
       menu->addSeparator();
@@ -201,6 +208,11 @@ QMenu *QgsAppLayerTreeViewMenuProvider::createContextMenu()
         menu->addAction( actions->actionMoveToTop( menu ) );
       }
 
+      if ( !( mView->selectedNodes( true ).count() == 1 && idx.row() == idx.model()->rowCount() - 1 ) )
+      {
+        menu->addAction( actions->actionMoveToBottom( menu ) );
+      }
+
       QAction *checkAll = actions->actionCheckAndAllParents( menu );
       if ( checkAll )
         menu->addAction( checkAll );
@@ -219,13 +231,15 @@ QMenu *QgsAppLayerTreeViewMenuProvider::createContextMenu()
         // attribute table
         QgsSettings settings;
         QgsAttributeTableFilterModel::FilterMode initialMode = settings.enumValue( QStringLiteral( "qgis/attributeTableBehavior" ),  QgsAttributeTableFilterModel::ShowAll );
-        QAction *attributeTable = menu->addAction( QgsApplication::getThemeIcon( QStringLiteral( "/mActionOpenTable.svg" ) ), tr( "&Open Attribute Table" ),
-                                  QgisApp::instance(), [ = ] { QgisApp::instance()->attributeTable( initialMode ); } );
-        attributeTable->setEnabled( vlayer->isValid() );
+        const auto lambdaOpenAttributeTable = [ = ] { QgisApp::instance()->attributeTable( initialMode ); };
+        QAction *attributeTableAction = menu->addAction( QgsApplication::getThemeIcon( QStringLiteral( "/mActionOpenTable.svg" ) ), tr( "&Open Attribute Table" ),
+                                        QgisApp::instance(), lambdaOpenAttributeTable );
+        attributeTableAction->setEnabled( vlayer->isValid() );
 
         // allow editing
-        unsigned int cap = vlayer->dataProvider()->capabilities();
-        if ( cap & QgsVectorDataProvider::EditingCapabilities )
+        const QgsVectorDataProvider *provider = vlayer->dataProvider();
+        if ( provider &&
+             ( provider->capabilities() & QgsVectorDataProvider::EditingCapabilities ) )
         {
           if ( toggleEditingAction )
           {
@@ -242,18 +256,27 @@ QMenu *QgsAppLayerTreeViewMenuProvider::createContextMenu()
         if ( allEditsAction->isEnabled() )
           menu->addAction( allEditsAction );
 
-        if ( vlayer->dataProvider()->supportsSubsetString() )
+        if ( provider && provider->supportsSubsetString() )
         {
-          QAction *action = menu->addAction( tr( "&Filter…" ), QgisApp::instance(), &QgisApp::layerSubsetString );
+          QAction *action = menu->addAction( tr( "&Filter…" ), QgisApp::instance(), qgis::overload<>::of( &QgisApp::layerSubsetString ) );
           action->setEnabled( !vlayer->isEditable() );
         }
+      }
+
+      if ( rlayer &&
+           rlayer->dataProvider() &&
+           rlayer->dataProvider()->supportsSubsetString() )
+      {
+        menu->addAction( tr( "&Filter…" ), QgisApp::instance(), qgis::overload<>::of( &QgisApp::layerSubsetString ) );
       }
 
       // change data source is only supported for vectors and rasters
       if ( vlayer || rlayer )
       {
 
-        QAction *a = new QAction( tr( "Change Data Source…" ), menu );
+        QAction *a = new QAction( layer->isValid() ? tr( "Change Data Source…" ) : tr( "Repair Data Source…" ), menu );
+        if ( !layer->isValid() )
+          a->setIcon( QgsApplication::getThemeIcon( QStringLiteral( "mIconWarning.svg" ) ) );
         // Disable when layer is editable
         if ( layer->isEditable() )
         {
@@ -269,6 +292,34 @@ QMenu *QgsAppLayerTreeViewMenuProvider::createContextMenu()
         menu->addAction( a );
       }
 
+      // actions on the selection
+      if ( vlayer && vlayer->selectedFeatureCount() > 0 )
+      {
+        int selectionCount = vlayer->selectedFeatureCount();
+        QgsMapLayerAction::Target target;
+        if ( selectionCount == 1 )
+          target = QgsMapLayerAction::Target::SingleFeature;
+        else
+          target = QgsMapLayerAction::Target::MultipleFeatures;
+
+        const QList<QgsMapLayerAction *> constRegisteredActions = QgsGui::mapLayerActionRegistry()->mapLayerActions( vlayer, target );
+        if ( !constRegisteredActions.isEmpty() )
+        {
+          QMenu *actionMenu = menu->addMenu( tr( "Actions on Selection (%1)" ).arg( selectionCount ) );
+          for ( QgsMapLayerAction *action : constRegisteredActions )
+          {
+            if ( target == QgsMapLayerAction::Target::SingleFeature )
+            {
+              actionMenu->addAction( action->text(), action, [ = ]() { action->triggerForFeature( vlayer,  vlayer->selectedFeatures().at( 0 ) ); } );
+            }
+            else if ( target == QgsMapLayerAction::Target::MultipleFeatures )
+            {
+              actionMenu->addAction( action->text(), action, [ = ]() {action->triggerForFeatures( vlayer, vlayer->selectedFeatures() );} );
+            }
+          }
+        }
+      }
+
       menu->addSeparator();
 
       if ( layer && layer->isSpatial() )
@@ -279,15 +330,74 @@ QMenu *QgsAppLayerTreeViewMenuProvider::createContextMenu()
         if ( !layer->isInScaleRange( mCanvas->scale() ) )
           menu->addAction( tr( "Zoom to &Visible Scale" ), QgisApp::instance(), &QgisApp::zoomToLayerScale );
 
-        QMenu *menuSetCRS = new QMenu( tr( "Set CRS" ), menu );
+        QMenu *menuSetCRS = new QMenu( tr( "Layer CRS" ), menu );
+
+        const QList<QgsLayerTreeNode *> selectedNodes = mView->selectedNodes();
+        QgsCoordinateReferenceSystem layerCrs;
+        bool firstLayer = true;
+        bool allSameCrs = true;
+        for ( QgsLayerTreeNode *node : selectedNodes )
+        {
+          if ( QgsLayerTree::isLayer( node ) )
+          {
+            QgsLayerTreeLayer *nodeLayer = QgsLayerTree::toLayer( node );
+            if ( nodeLayer->layer() )
+            {
+              if ( firstLayer )
+              {
+                layerCrs = nodeLayer->layer()->crs();
+                firstLayer = false;
+              }
+              else if ( nodeLayer->layer()->crs() != layerCrs )
+              {
+                allSameCrs = false;
+                break;
+              }
+            }
+          }
+        }
+
+        QAction *actionCurrentCrs = new QAction( !allSameCrs ? tr( "Mixed CRS" )
+            : layer->crs().isValid() ? layer->crs().userFriendlyIdentifier()
+            : tr( "No CRS" ), menuSetCRS );
+        actionCurrentCrs->setEnabled( false );
+        menuSetCRS->addAction( actionCurrentCrs );
+
+        if ( allSameCrs && layerCrs.isValid() )
+        {
+          // assign layer crs to project
+          QAction *actionSetProjectCrs = new QAction( tr( "Set &Project CRS from Layer" ), menuSetCRS );
+          connect( actionSetProjectCrs, &QAction::triggered, QgisApp::instance(), &QgisApp::setProjectCrsFromLayer );
+          menuSetCRS->addAction( actionSetProjectCrs );
+        }
+
+        const QList< QgsCoordinateReferenceSystem> recentProjections = QgsCoordinateReferenceSystem::recentCoordinateReferenceSystems();
+        if ( !recentProjections.isEmpty() )
+        {
+          menuSetCRS->addSeparator();
+          int i = 0;
+          for ( const QgsCoordinateReferenceSystem &crs : recentProjections )
+          {
+            if ( crs == layer->crs() )
+              continue;
+
+            QAction *action = menuSetCRS->addAction( tr( "Set to %1" ).arg( crs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ) ) );
+            connect( action, &QAction::triggered, this, [ = ]
+            {
+              setLayerCrs( crs );
+            } );
+
+            i++;
+            if ( i == 5 )
+              break;
+          }
+        }
+
         // set layer crs
+        menuSetCRS->addSeparator();
         QAction *actionSetLayerCrs = new QAction( tr( "Set Layer CRS…" ), menuSetCRS );
         connect( actionSetLayerCrs, &QAction::triggered, QgisApp::instance(), &QgisApp::setLayerCrs );
         menuSetCRS->addAction( actionSetLayerCrs );
-        // assign layer crs to project
-        QAction *actionSetProjectCrs = new QAction( tr( "Set &Project CRS from Layer" ), menuSetCRS );
-        connect( actionSetProjectCrs, &QAction::triggered, QgisApp::instance(), &QgisApp::setProjectCrsFromLayer );
-        menuSetCRS->addAction( actionSetProjectCrs );
 
         menu->addMenu( menuSetCRS );
       }
@@ -296,7 +406,7 @@ QMenu *QgsAppLayerTreeViewMenuProvider::createContextMenu()
 
       if ( vlayer )
       {
-        if ( vlayer->providerType() == QLatin1String( "memory" ) )
+        if ( vlayer->isTemporary() )
         {
           QAction *actionMakePermanent = new QAction( QgsApplication::getThemeIcon( QStringLiteral( "mActionFileSave.svg" ) ), tr( "Make Permanent…" ), menu );
           connect( actionMakePermanent, &QAction::triggered, QgisApp::instance(), [ = ] { QgisApp::instance()->makeMemoryLayerPermanent( vlayer ); } );
@@ -357,7 +467,7 @@ QMenu *QgsAppLayerTreeViewMenuProvider::createContextMenu()
         {
           QMenu *copyStyleMenu = menuStyleManager->addMenu( tr( "Copy Style" ) );
           copyStyleMenu->setToolTipsVisible( true );
-          QgsMapLayerStyleCategoriesModel *model = new QgsMapLayerStyleCategoriesModel( copyStyleMenu );
+          QgsMapLayerStyleCategoriesModel *model = new QgsMapLayerStyleCategoriesModel( layer->type(), copyStyleMenu );
           model->setShowAllCategories( true );
           for ( int row = 0; row < model->rowCount(); ++row )
           {
@@ -396,7 +506,7 @@ QMenu *QgsAppLayerTreeViewMenuProvider::createContextMenu()
 
                 QgsMapLayer::StyleCategories sourceCategories = QgsXmlUtils::readFlagAttribute( myRoot, QStringLiteral( "styleCategories" ), QgsMapLayer::AllStyleCategories );
 
-                QgsMapLayerStyleCategoriesModel *model = new QgsMapLayerStyleCategoriesModel( pasteStyleMenu );
+                QgsMapLayerStyleCategoriesModel *model = new QgsMapLayerStyleCategoriesModel( layer->type(), pasteStyleMenu );
                 model->setShowAllCategories( true );
                 for ( int row = 0; row < model->rowCount(); ++row )
                 {
@@ -647,13 +757,13 @@ QList< LegendLayerAction > QgsAppLayerTreeViewMenuProvider::legendLayerActions( 
 #ifdef QGISDEBUG
   if ( mLegendLayerActionMap.contains( type ) )
   {
-    QgsDebugMsg( QStringLiteral( "legendLayerActions for layers of type %1:" ).arg( static_cast<int>( type ) ) );
+    QgsDebugMsgLevel( QStringLiteral( "legendLayerActions for layers of type %1:" ).arg( static_cast<int>( type ) ), 2 );
 
     const auto legendLayerActions { mLegendLayerActionMap.value( type ) };
     for ( const LegendLayerAction &lyrAction : legendLayerActions )
     {
       Q_UNUSED( lyrAction )
-      QgsDebugMsg( QStringLiteral( "%1/%2 - %3 layers" ).arg( lyrAction.menu, lyrAction.action->text() ).arg( lyrAction.layers.count() ) );
+      QgsDebugMsgLevel( QStringLiteral( "%1/%2 - %3 layers" ).arg( lyrAction.menu, lyrAction.action->text() ).arg( lyrAction.layers.count() ), 2 );
     }
   }
 #endif
@@ -848,7 +958,10 @@ void QgsAppLayerTreeViewMenuProvider::editSymbolLegendNodeSymbol( const QString 
 
   const QgsSymbol *originalSymbol = node->symbol();
   if ( !originalSymbol )
+  {
+    QgisApp::instance()->messageBar()->pushWarning( tr( "No Symbol" ), tr( "There is no symbol associated with the rule." ) );
     return;
+  }
 
   std::unique_ptr< QgsSymbol > symbol( originalSymbol->clone() );
   QgsVectorLayer *vlayer = qobject_cast<QgsVectorLayer *>( node->layerNode()->layer() );
@@ -944,4 +1057,21 @@ bool QgsAppLayerTreeViewMenuProvider::removeActionEnabled()
       return false;
   }
   return true;
+}
+
+void QgsAppLayerTreeViewMenuProvider::setLayerCrs( const QgsCoordinateReferenceSystem &crs )
+{
+  const auto constSelectedNodes = mView->selectedNodes();
+  for ( QgsLayerTreeNode *node : constSelectedNodes )
+  {
+    if ( QgsLayerTree::isLayer( node ) )
+    {
+      QgsLayerTreeLayer *nodeLayer = QgsLayerTree::toLayer( node );
+      if ( nodeLayer->layer() )
+      {
+        nodeLayer->layer()->setCrs( crs, true );
+        nodeLayer->layer()->triggerRepaint();
+      }
+    }
+  }
 }

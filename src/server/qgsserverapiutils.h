@@ -25,6 +25,16 @@
 #include <QString>
 #include "qgsproject.h"
 #include "qgsserverprojectutils.h"
+#include "qgsserverapicontext.h"
+#include "qgsserverexception.h"
+#include "qgsvectorlayerserverproperties.h"
+#include "qgsrange.h"
+#include "qgsjsonutils.h"
+
+#ifdef HAVE_SERVER_PYTHON_PLUGINS
+#include "qgsaccesscontrol.h"
+#include "qgsserverinterface.h"
+#endif
 
 class QgsRectangle;
 class QgsCoordinateReferenceSystem;
@@ -46,19 +56,95 @@ class SERVER_EXPORT QgsServerApiUtils
   public:
 
     /**
-     * Parses a comma separated \a bbox into a (possibily empty) QgsRectangle.
+     * Parses a comma separated \a bbox into a (possibly empty) QgsRectangle.
      *
      * \note Z values (i.e. a 6 elements bbox) are silently discarded
      */
     static QgsRectangle parseBbox( const QString &bbox );
 
     /**
+     * Returns a list of temporal dimensions information for the given \a layer (either configured in wmsDimensions or the first date/datetime field)
+     * \since QGIS 3.12
+     */
+    static QList< QgsVectorLayerServerProperties::WmsDimensionInfo > temporalDimensions( const QgsVectorLayer *layer );
+
+    /**
+     * Parses a date \a interval and returns a QgsDateRange
+     *
+     * \throws QgsServerApiBadRequestException if interval cannot be parsed
+     * \since QGIS 3.12
+     */
+    static QgsDateRange parseTemporalDateInterval( const QString &interval ) SIP_THROW( QgsServerApiBadRequestException );
+
+    /**
+     * Parses a datetime \a interval and returns a QgsDateTimeRange
+     *
+     * \throws QgsServerApiBadRequestException if interval cannot be parsed
+     * \since QGIS 3.12
+     */
+    static QgsDateTimeRange parseTemporalDateTimeInterval( const QString &interval ) SIP_THROW( QgsServerApiBadRequestException );
+
+///@cond PRIVATE
+    // T is TemporalDateInterval|TemporalDateTimeInterval, T2 is QDate|QdateTime
+    template<typename T, class T2> static T parseTemporalInterval( const QString &interval ) SIP_SKIP;
+/// @endcond
+
+
+    /**
+     * Parses the \a interval and constructs a (possibly invalid) temporal filter expression for the given \a layer
+     *
+     * Interval syntax:
+     *
+     *   interval-closed     = date-time "/" date-time
+     *   interval-open-start = [".."] "/" date-time
+     *   interval-open-end   = date-time "/" [".."]
+     *   interval            = interval-closed / interval-open-start / interval-open-end
+     *   datetime            = date-time / interval
+     * \since QGIS 3.12
+     */
+    static QgsExpression temporalFilterExpression( const QgsVectorLayer *layer, const QString &interval );
+
+    /**
      * layerExtent returns json array with [xMin,yMin,xMax,yMax] CRS84 extent for the given \a layer
-     * FIXME: the OpenAPI swagger docs say that it is inverted axis order: West, north, east, south edges of the spatial extent.
-     *        but current example implementations and GDAL assume it's not.
-     * TODO: maybe consider advertised extent instead?
      */
     static json layerExtent( const QgsVectorLayer *layer ) SIP_SKIP;
+
+    /**
+     * temporalExtent returns a json array with an array of [min, max] temporal extent for the given \a layer.
+     * In case multiple temporal dimensions are available in the layer, a union of all dimensions is returned.
+     *
+     * From specifications: http://schemas.opengis.net/ogcapi/features/part1/1.0/openapi/schemas/extent.yaml
+     *
+     * One or more time intervals that describe the temporal extent of the dataset.
+     * The value `null` is supported and indicates an open time interval.
+     *
+     * In the Core only a single time interval is supported. Extensions may support
+     * multiple intervals. If multiple intervals are provided, the union of the
+     * intervals describes the temporal extent.
+     *
+     * \returns An array of intervals
+     * \note not available in Python bindings
+     * \since QGIS 3.12
+     */
+    static json temporalExtent( const QgsVectorLayer *layer ) SIP_SKIP;
+
+    /**
+     * temporalExtent returns a json array with an array of [min, max] temporal extent for the given \a layer.
+     * In case multiple temporal dimensions are available in the layer, a union of all dimensions is returned.
+     *
+     * From specifications: http://schemas.opengis.net/ogcapi/features/part1/1.0/openapi/schemas/extent.yaml
+     *
+     * One or more time intervals that describe the temporal extent of the dataset.
+     * The value `null` is supported and indicates an open time interval.
+     *
+     * In the Core only a single time interval is supported. Extensions may support
+     * multiple intervals. If multiple intervals are provided, the union of the
+     * intervals describes the temporal extent.
+     *
+     * \returns An array of intervals
+     * \since QGIS 3.12
+     */
+    static QVariantList temporalExtentList( const QgsVectorLayer *layer ) SIP_PYNAME( temporalExtent );
 
     /**
      * Parses the CRS URI \a bboxCrs (example: "http://www.opengis.net/def/crs/OGC/1.3/CRS84") into a QGIS CRS object
@@ -66,22 +152,11 @@ class SERVER_EXPORT QgsServerApiUtils
     static QgsCoordinateReferenceSystem parseCrs( const QString &bboxCrs );
 
     /**
-     * Returns the list of fields accessible to the service for a given \a layer.
+     * Returns the list of layers accessible to the service for a given \a context.
      *
      * This method takes into account the ACL restrictions provided by QGIS Server Access Control plugins.
-     * TODO: implement ACL
      */
-    static const QgsFields publishedFields( const QgsVectorLayer *layer );
-
-    /**
-     * Returns the list of layers accessible to the service for a given \a project.
-     *
-     * This method takes into account the ACL restrictions provided by QGIS Server Access Control plugins.
-     *
-     * \note project must not be NULL
-     * TODO: implement ACL
-     */
-    static const QVector<QgsMapLayer *> publishedWfsLayers( const QgsProject *project );
+    static const QVector<QgsVectorLayer *> publishedWfsLayers( const QgsServerApiContext &context );
 
 #ifndef SIP_RUN
 
@@ -90,39 +165,46 @@ class SERVER_EXPORT QgsServerApiUtils
      *
      * Example:
      *
-     *     QVector<QgsVectorLayer*> vectorLayers = publishedLayers<QgsVectorLayer>();
+     *     QVector<const QgsVectorLayer*> vectorLayers = publishedLayers<QgsVectorLayer>();
      *
-     * TODO: implement ACL
      * \note not available in Python bindings
-     * \see publishedWfsLayers()
      */
     template <typename T>
-    static const QVector<T *> publishedWfsLayers( const QgsProject *project )
+    static const QVector<T> publishedWfsLayers( const QgsServerApiContext &context )
     {
-      const QStringList wfsLayerIds = QgsServerProjectUtils::wfsLayerIds( *project );
-      const QStringList wfstUpdateLayersId = QgsServerProjectUtils::wfstUpdateLayerIds( *project );
-      const QStringList wfstInsertLayersId = QgsServerProjectUtils::wfstInsertLayerIds( *project );
-      const QStringList wfstDeleteLayersId = QgsServerProjectUtils::wfstDeleteLayerIds( *project );
-      QVector<T *> result;
-      const auto constLayers { project->layers<T *>() };
-      for ( const auto &layer : constLayers )
+#ifdef HAVE_SERVER_PYTHON_PLUGINS
+      QgsAccessControl *accessControl = context.serverInterface()->accessControls();
+#endif
+      const QgsProject *project = context.project();
+      QVector<T> result;
+      if ( project )
       {
-        if ( wfstUpdateLayersId.contains( layer->id() ) ||
-             wfstInsertLayersId.contains( layer->id() ) ||
-             wfstDeleteLayersId.contains( layer->id() ) )
+        const QStringList wfsLayerIds = QgsServerProjectUtils::wfsLayerIds( *project );
+        const auto constLayers { project->layers<T>() };
+        for ( const auto &layer : constLayers )
         {
+          if ( ! wfsLayerIds.contains( layer->id() ) )
+          {
+            continue;
+          }
+#ifdef HAVE_SERVER_PYTHON_PLUGINS
+          if ( accessControl && !accessControl->layerReadPermission( layer ) )
+          {
+            continue;
+          }
+#endif
           result.push_back( layer );
         }
-
       }
       return result;
     }
 
 #endif
 
+
     /**
-     * Sanitizes the input \a value by removing URL encoding and checking for malicious content.
-     * In case of failure returns an empty string.
+     * Sanitizes the input \a value by removing URL encoding.
+     * \note the returned value is meant to become part of a QgsExpression filter
      */
     static QString sanitizedFieldValue( const QString &value );
 

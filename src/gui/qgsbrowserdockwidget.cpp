@@ -54,7 +54,6 @@ QgsBrowserDockWidget::QgsBrowserDockWidget( const QString &name, QgsBrowserGuiMo
   setupUi( this );
 
   mContents->layout()->setContentsMargins( 0, 0, 0, 0 );
-  mContents->layout()->setMargin( 0 );
   static_cast< QVBoxLayout * >( mContents->layout() )->setSpacing( 0 );
 
   setWindowTitle( name );
@@ -128,6 +127,7 @@ void QgsBrowserDockWidget::showEvent( QShowEvent *e )
   {
     mProxyModel = new QgsBrowserProxyModel( this );
     mProxyModel->setBrowserModel( mModel );
+    mProxyModel->setHiddenDataItemProviderKeyFilter( mDisabledDataItemsKeys );
     mBrowserView->setSettingsSection( objectName().toLower() ); // to distinguish 2 or more instances of the browser
     mBrowserView->setBrowserModel( mModel );
     mBrowserView->setModel( mProxyModel );
@@ -289,6 +289,16 @@ QgsMessageBar *QgsBrowserDockWidget::messageBar()
   return mMessageBar;
 }
 
+void QgsBrowserDockWidget::setDisabledDataItemsKeys( const QStringList &filter )
+{
+  mDisabledDataItemsKeys = filter;
+
+  if ( !mProxyModel )
+    return;
+
+  mProxyModel->setHiddenDataItemProviderKeyFilter( mDisabledDataItemsKeys );
+}
+
 void QgsBrowserDockWidget::removeFavorite()
 {
   mModel->removeFavorite( mProxyModel->mapToSource( mBrowserView->currentIndex() ) );
@@ -444,7 +454,7 @@ void QgsBrowserDockWidget::showProperties()
   {
     QgsBrowserPropertiesDialog *dialog = new QgsBrowserPropertiesDialog( settingsSection(), this );
     dialog->setAttribute( Qt::WA_DeleteOnClose );
-    dialog->setItem( item );
+    dialog->setItem( item, createContext() );
     dialog->show();
   }
 }
@@ -563,7 +573,8 @@ void QgsBrowserDockWidget::setPropertiesWidget()
     {
       QModelIndex index = mProxyModel->mapToSource( indexes.value( 0 ) );
       QgsDataItem *item = mModel->dataItem( index );
-      QgsBrowserPropertiesWidget *propertiesWidget = QgsBrowserPropertiesWidget::createWidget( item, mPropertiesWidget );
+      QgsDataItemGuiContext context = createContext();
+      QgsBrowserPropertiesWidget *propertiesWidget = QgsBrowserPropertiesWidget::createWidget( item, context, mPropertiesWidget );
       if ( propertiesWidget )
       {
         propertiesWidget->setCondensedMode( true );
@@ -584,6 +595,16 @@ void QgsBrowserDockWidget::enablePropertiesWidget( bool enable )
   else
   {
     clearPropertiesWidget();
+  }
+}
+
+void QgsBrowserDockWidget::setActiveIndex( const QModelIndex &index )
+{
+  if ( index.isValid() )
+  {
+    QModelIndex proxyIndex = mProxyModel->mapFromSource( index );
+    mBrowserView->expand( proxyIndex );
+    mBrowserView->setCurrentIndex( proxyIndex );
   }
 }
 

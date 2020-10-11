@@ -12,9 +12,14 @@
 # py files located under /usr/share/qgis/python/plugins
 %global __python %{__python3}
 
-%if 0%{?fedora} >= 30
+# SPEC do not support elseif until very recent releases
+%if 0%{?fedora} >= 31
+%define grass grass78
+%endif
+%if 0%{?fedora} == 30
 %define grass grass76
-%else
+%endif
+%if 0%{?fedora} < 30
 %define grass grass74
 %endif
 
@@ -82,6 +87,9 @@ BuildRequires:  sqlite-devel
 BuildRequires:  hdf5-devel
 BuildRequires:  netcdf-devel
 BuildRequires:  fcgi-devel
+BuildRequires:  protobuf-compiler
+BuildRequires:  protobuf-devel
+BuildRequires:  protobuf-lite-devel
 
 # OpenCL
 BuildRequires:  opencl-headers
@@ -94,11 +102,10 @@ BuildRequires:  python3-OWSLib
 BuildRequires:  python3-psycopg2
 BuildRequires:  python3-pygments
 BuildRequires:  python3-PyYAML
-BuildRequires:  python3-qscintilla-devel
 BuildRequires:  python3-qscintilla-qt5
 BuildRequires:  python3-qscintilla-qt5-devel
 BuildRequires:  python3-qt5-devel
-BuildRequires:  sip-devel
+BuildRequires:  python3-sip-devel
 
 # Qca stuff
 BuildRequires:  qca-qt5-devel
@@ -192,10 +199,9 @@ Requires:       python3-OWSLib
 Requires:       python3-psycopg2
 Requires:       python3-pygments
 Requires:       python3-PyYAML
-Requires:       python3-qscintilla
 Requires:       python3-qscintilla-qt5
 Requires:       python3-qt5
-%{?_sip_api:Requires: sip-api(%{_sip_api_major}) >= %{_sip_api}}
+%{?_sip_api:Requires: python3-pyqt5-sip-api(%{_sip_api_major}) >= %{_sip_api}}
 
 %description -n python3-qgis
 Python integration and plug-ins for QGIS.
@@ -299,7 +305,7 @@ update-mime-database %{?fedora:-n} %{_datadir}/mime &> /dev/null || :
 %postun -n python3-qgis -p /sbin/ldconfig
 
 %files -f %{name}.lang
-%doc BUGS NEWS Exception_to_GPL_for_Qt.txt ChangeLog.gz
+%doc BUGS NEWS.md Exception_to_GPL_for_Qt.txt ChangeLog.gz
 # QGIS shows the following files in the GUI, including the license text
 %doc %{_datadir}/%{name}/doc/
 %dir %{_datadir}/%{name}/i18n/
@@ -314,6 +320,7 @@ update-mime-database %{?fedora:-n} %{_datadir}/mime &> /dev/null || :
 %{_libdir}/%{name}/
 %{?_qt5_plugindir}/sqldrivers/libqsqlspatialite.so
 %{_bindir}/%{name}
+%{_bindir}/%{name}_process
 %{_mandir}/man1/%{name}.1*
 %dir %{_datadir}/%{name}/
 %{_datadir}/mime/packages/qgis.xml
@@ -356,6 +363,7 @@ update-mime-database %{?fedora:-n} %{_datadir}/mime &> /dev/null || :
 %files server
 %doc src/server/admin.sld src/server/wms_metadata.xml %{name}-server-README.fedora
 %doc %{name}-server-httpd.conf %{name}-server-nginx.conf %{name}-server-fcgi.socket %{name}-server-fcgi.service
+%{_bindir}/%{name}_mapserver
 %{_libdir}/%{name}/server/
 %{_libdir}/lib%{name}_server.so.*
 %{_libexecdir}/%{name}/

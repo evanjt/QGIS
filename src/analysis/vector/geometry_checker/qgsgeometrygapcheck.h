@@ -89,13 +89,17 @@ class ANALYSIS_EXPORT QgsGeometryGapCheckError : public QgsGeometryCheckError
 class ANALYSIS_EXPORT QgsGeometryGapCheck : public QgsGeometryCheck
 {
     Q_GADGET
+    Q_DECLARE_TR_FUNCTIONS( QgsGeometryGapCheck )
+
   public:
     //! Resolution methods for geometry gap checks
     enum ResolutionMethod
     {
       MergeLongestEdge, //!< Merge the gap with the polygon with the longest shared edge.
       NoChange, //!< Do not handle the error.
-      AddToAllowedGaps
+      AddToAllowedGaps, //!< Add gap geometry to allowed gaps layer
+      CreateNewFeature, //!< Create a new feature with the gap geometry
+      MergeLargestArea, //!< Merge with neighbouring polygon with largest area
     };
     Q_ENUM( ResolutionMethod )
 
@@ -112,7 +116,9 @@ class ANALYSIS_EXPORT QgsGeometryGapCheck : public QgsGeometryCheck
     QList<QgsWkbTypes::GeometryType> compatibleGeometryTypes() const override { return factoryCompatibleGeometryTypes(); }
     void collectErrors( const QMap<QString, QgsFeaturePool *> &featurePools, QList<QgsGeometryCheckError *> &errors, QStringList &messages, QgsFeedback *feedback, const LayerFeatureIds &ids = LayerFeatureIds() ) const override;
     void fixError( const QMap<QString, QgsFeaturePool *> &featurePools, QgsGeometryCheckError *error, int method, const QMap<QString, int> &mergeAttributeIndices, Changes &changes ) const override;
-    QStringList resolutionMethods() const override;
+    Q_DECL_DEPRECATED QStringList resolutionMethods() const override;
+
+    QList<QgsGeometryCheckResolutionMethod> availableResolutionMethods() const override;
 
     QString description() const override;
     QString id() const override;
@@ -129,13 +135,19 @@ class ANALYSIS_EXPORT QgsGeometryGapCheck : public QgsGeometryCheck
 ///@endcond private
 
   private:
+    enum Condition
+    {
+      LongestSharedEdge,
+      LargestArea
+    };
+
     bool mergeWithNeighbor( const QMap<QString, QgsFeaturePool *> &featurePools,
-                            QgsGeometryGapCheckError *err, Changes &changes, QString &errMsg ) const;
+                            QgsGeometryGapCheckError *err, Changes &changes, QString &errMsg, Condition condition ) const;
 
     const double mGapThresholdMapUnits;
     QgsWeakMapLayerPointer mAllowedGapsLayer;
     std::unique_ptr<QgsVectorLayerFeatureSource> mAllowedGapsSource;
-    double mAllowedGapsBuffer;
+    double mAllowedGapsBuffer = 0;
 
 };
 

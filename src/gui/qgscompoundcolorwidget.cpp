@@ -52,7 +52,6 @@ QgsCompoundColorWidget::QgsCompoundColorWidget( QWidget *parent, const QColor &c
   {
     // shuffle stuff around
     QVBoxLayout *newLayout = new QVBoxLayout();
-    newLayout->setMargin( 0 );
     newLayout->setContentsMargins( 0, 0, 0, 0 );
     newLayout->addWidget( mTabWidget );
     newLayout->addWidget( mSlidersWidget );
@@ -65,7 +64,12 @@ QgsCompoundColorWidget::QgsCompoundColorWidget( QWidget *parent, const QColor &c
   QgsSettings settings;
 
   mSchemeList->header()->hide();
+#if QT_VERSION < QT_VERSION_CHECK(5, 11, 0)
   mSchemeList->setColumnWidth( 0, static_cast< int >( Qgis::UI_SCALE_FACTOR * fontMetrics().width( 'X' ) * 6 ) );
+#else
+  mSchemeList->setColumnWidth( 0, static_cast< int >( Qgis::UI_SCALE_FACTOR * fontMetrics().horizontalAdvance( 'X' ) * 6 ) );
+#endif
+
 
   //get schemes with ShowInColorDialog set
   refreshSchemeComboBox();
@@ -287,7 +291,6 @@ QgsCompoundColorWidget::QgsCompoundColorWidget( QWidget *parent, const QColor &c
 
 QgsCompoundColorWidget::~QgsCompoundColorWidget()
 {
-  saveSettings();
   if ( !mDiscarded )
   {
     QgsRecentColorScheme::addRecentColor( color() );
@@ -390,7 +393,7 @@ void QgsCompoundColorWidget::importPalette()
 bool QgsCompoundColorWidget::removeUserPalette( QgsUserColorScheme *scheme, QWidget *parent )
 {
   if ( QMessageBox::question( parent, tr( "Remove Color Palette" ),
-                              QString( tr( "Are you sure you want to remove %1?" ) ).arg( scheme->schemeName() ),
+                              tr( "Are you sure you want to remove %1?" ).arg( scheme->schemeName() ),
                               QMessageBox::Yes | QMessageBox::No, QMessageBox::No ) != QMessageBox::Yes )
   {
     //user canceled
@@ -734,6 +737,12 @@ void QgsCompoundColorWidget::setPreviousColor( const QColor &color )
 {
   mOldColorLabel->setVisible( color.isValid() );
   mColorPreview->setColor2( color );
+}
+
+void QgsCompoundColorWidget::hideEvent( QHideEvent *e )
+{
+  saveSettings();
+  QWidget::hideEvent( e );
 }
 
 void QgsCompoundColorWidget::mousePressEvent( QMouseEvent *e )

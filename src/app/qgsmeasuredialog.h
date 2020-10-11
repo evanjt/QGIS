@@ -35,7 +35,7 @@ class APP_EXPORT QgsMeasureDialog : public QDialog, private Ui::QgsMeasureBase
   public:
 
     //! Constructor
-    QgsMeasureDialog( QgsMeasureTool *tool, Qt::WindowFlags f = nullptr );
+    QgsMeasureDialog( QgsMeasureTool *tool, Qt::WindowFlags f = Qt::WindowFlags() );
 
     //! Save position
     void saveWindowLocation();
@@ -46,7 +46,7 @@ class APP_EXPORT QgsMeasureDialog : public QDialog, private Ui::QgsMeasureBase
     //! Add new point
     void addPoint();
 
-    //! Mose move
+    //! Mouse move
     void mouseMove( const QgsPointXY &point );
 
     //! Removes the last point
@@ -69,6 +69,9 @@ class APP_EXPORT QgsMeasureDialog : public QDialog, private Ui::QgsMeasureBase
 
     //! Open configuration tab
     void openConfigTab();
+
+    //! Copy measurements to the clipboard
+    void copyMeasurements();
 
     void crsChanged();
 

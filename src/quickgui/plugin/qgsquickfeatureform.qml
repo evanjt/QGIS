@@ -42,6 +42,13 @@ Item {
   property var externalResourceHandler: QtObject {
 
         /**
+         * Called when clicked on the camera icon to capture an image.
+         * \param itemWidget editorWidget for modified field to send valueChanged signal.
+         */
+        property var capturePhoto: function captureImage(itemWidget) {
+        }
+
+        /**
          * Called when clicked on the gallery icon to choose a file in a gallery.
          * \param itemWidget editorWidget for modified field to send valueChanged signal.
          */
@@ -74,6 +81,21 @@ Item {
           itemWidget.valueChanged(value, value === "" || value === null)
         }
     }
+
+  /**
+   * Support for custom callback on events happening in widgets
+   */
+  property var customWidgetCallback: QtObject {
+
+    /**
+     * Called when user clicks on valuerelation widget and combobox shall open
+     * \param widget valuerelation widget for specific field to send valueChanged signal.
+     * \param valueRelationModel model of type FeaturesListModel bears features of related layer.
+     */
+    property var valueRelationOpened: function valueRelationOpened( widget, valueRelationModel ) {
+      widget.openCombobox() // by default just open combobox
+    }
+  }
 
   /**
    * AttributeFormModel binded on a feature supporting auto-generated editor layouts and "tab" layout.
@@ -389,6 +411,7 @@ Item {
           property bool readOnly: form.state == "ReadOnly" || !AttributeEditable
           property var featurePair: form.model.attributeModel.featureLayerPair
           property var activeProject: form.project
+          property var customWidget: form.customWidgetCallback
 
           active: widget !== 'Hidden'
 

@@ -13,13 +13,15 @@
  *                                                                         *
  ***************************************************************************/
 
+#include "qgswmsprovidergui.h"
 #include "qgswmsprovider.h"
 #include "qgswmssourceselect.h"
+#include "qgsxyzsourceselect.h"
 #include "qgssourceselectprovider.h"
 #include "qgstilescalewidget.h"
 #include "qgsproviderguimetadata.h"
 #include "qgswmsdataitemguiproviders.h"
-
+#include "qgswmsdataitems.h"
 
 //! Provider for WMS layers source select
 class QgsWmsSourceSelectProvider : public QgsSourceSelectProvider
@@ -36,33 +38,47 @@ class QgsWmsSourceSelectProvider : public QgsSourceSelectProvider
     }
 };
 
-
-class QgsWmsProviderGuiMetadata: public QgsProviderGuiMetadata
+class QgsXyzSourceSelectProvider : public QgsSourceSelectProvider
 {
   public:
-    QgsWmsProviderGuiMetadata(): QgsProviderGuiMetadata( QgsWmsProvider::WMS_KEY ) {}
-    QList<QgsSourceSelectProvider *> sourceSelectProviders() override
-    {
-      QList<QgsSourceSelectProvider *> providers;
-      providers << new QgsWmsSourceSelectProvider;
-      return providers;
-    }
 
-    QList<QgsDataItemGuiProvider *> dataItemGuiProviders() override
+    QString providerKey() const override { return QStringLiteral( "xyz" ); }
+    QString text() const override { return QStringLiteral( "XYZ" ); } // untranslatable string as acronym for this particular case. Use QObject::tr() otherwise
+    int ordering() const override { return QgsSourceSelectProvider::OrderRemoteProvider + 40; }
+    QIcon icon() const override { return QgsApplication::getThemeIcon( QStringLiteral( "/mActionAddXyzLayer.svg" ) ); }
+    QgsAbstractDataSourceWidget *createDataSourceWidget( QWidget *parent = nullptr, Qt::WindowFlags fl = Qt::Widget, QgsProviderRegistry::WidgetMode widgetMode = QgsProviderRegistry::WidgetMode::Embedded ) const override
     {
-      return QList<QgsDataItemGuiProvider *>()
-             << new QgsWmsDataItemGuiProvider
-             << new QgsXyzDataItemGuiProvider;
-    }
-
-    void registerGui( QMainWindow *widget ) override
-    {
-      QgsTileScaleWidget::showTileScale( widget );
+      return new QgsXyzSourceSelect( parent, fl, widgetMode );
     }
 };
 
+QgsWmsProviderGuiMetadata::QgsWmsProviderGuiMetadata()
+  : QgsProviderGuiMetadata( QgsWmsProvider::WMS_KEY )
+{
+}
 
+QList<QgsSourceSelectProvider *> QgsWmsProviderGuiMetadata::sourceSelectProviders()
+{
+  QList<QgsSourceSelectProvider *> providers;
+  providers << new QgsWmsSourceSelectProvider << new QgsXyzSourceSelectProvider;
+  return providers;
+}
+
+QList<QgsDataItemGuiProvider *> QgsWmsProviderGuiMetadata::dataItemGuiProviders()
+{
+  return QList<QgsDataItemGuiProvider *>()
+         << new QgsWmsDataItemGuiProvider
+         << new QgsXyzDataItemGuiProvider;
+}
+
+void QgsWmsProviderGuiMetadata::registerGui( QMainWindow *widget )
+{
+  QgsTileScaleWidget::showTileScale( widget );
+}
+
+#ifndef HAVE_STATIC_PROVIDERS
 QGISEXTERN QgsProviderGuiMetadata *providerGuiMetadataFactory()
 {
   return new QgsWmsProviderGuiMetadata();
 }
+#endif

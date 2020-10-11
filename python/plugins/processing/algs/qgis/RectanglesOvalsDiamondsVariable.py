@@ -32,6 +32,7 @@ from qgis.core import (NULL,
                        QgsPointXY,
                        QgsProcessing,
                        QgsProcessingException,
+                       QgsProcessingAlgorithm,
                        QgsProcessingParameterField,
                        QgsProcessingParameterFeatureSource,
                        QgsProcessingParameterEnum,
@@ -42,7 +43,6 @@ from processing.algs.qgis.QgisAlgorithm import QgisAlgorithm
 
 
 class RectanglesOvalsDiamondsVariable(QgisAlgorithm):
-
     INPUT = 'INPUT'
     SHAPE = 'SHAPE'
     WIDTH = 'WIDTH'
@@ -59,6 +59,9 @@ class RectanglesOvalsDiamondsVariable(QgisAlgorithm):
 
     def __init__(self):
         super().__init__()
+
+    def flags(self):
+        return super().flags() | QgsProcessingAlgorithm.FlagDeprecated
 
     def initAlgorithm(self, config=None):
         self.shapes = [self.tr('Rectangles'), self.tr('Diamonds'), self.tr('Ovals')]

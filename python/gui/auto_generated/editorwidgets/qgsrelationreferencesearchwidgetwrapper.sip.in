@@ -48,6 +48,12 @@ Returns a variant representing the current state of the widget.
 
     virtual QgsSearchWidgetWrapper::FilterFlags supportedFlags() const;
 
+
+    virtual QgsSearchWidgetWrapper::FilterFlags defaultFlags() const;
+
+%Docstring
+Returns the default flags (equalTo)
+%End
     virtual QString createExpression( QgsSearchWidgetWrapper::FilterFlags flags ) const;
 
 
@@ -70,7 +76,8 @@ Returns a variant representing the current state of the widget.
 %Docstring
 Called when current value of search widget changes
 
-.. deprecated:: since QGIS 3.10 made private
+.. deprecated:: QGIS 3.10
+   made private
 %End
 
   protected slots:

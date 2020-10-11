@@ -198,6 +198,9 @@ class QgsGrassMapcalc: public QMainWindow, private Ui::QgsGrassMapcalcBase,
     QAction *mActionLoad = nullptr;
     QAction *mActionSave = nullptr;
     QAction *mActionSaveAs = nullptr;
+
+    QgsGrassMapcalc( const QgsGrassMapcalc & ) = delete;
+    QgsGrassMapcalc &operator = ( const QgsGrassMapcalc & ) = delete;
 };
 
 /*
@@ -406,7 +409,7 @@ class QgsGrassMapcalcObject: public QGraphicsRectItem, public QgsGrassMapcalcIte
     // Half size of socket symbol
     int mSocketHalf;
 
-    // Margin beteween mRect and QCanvasRectangle.rect()
+    // Margin between mRect and QCanvasRectangle.rect()
     int mMargin;
 
     // Space between text boxes

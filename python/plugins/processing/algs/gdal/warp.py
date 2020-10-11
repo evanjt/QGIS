@@ -175,8 +175,6 @@ class warp(GdalAlgorithm):
         if inLayer is None:
             raise QgsProcessingException(self.invalidRasterError(parameters, self.INPUT))
 
-        out = self.parameterAsOutputLayer(parameters, self.OUTPUT, context)
-        self.setOutputValue(self.OUTPUT, out)
         sourceCrs = self.parameterAsCrs(parameters, self.SOURCE_CRS, context)
         targetCrs = self.parameterAsCrs(parameters, self.TARGET_CRS, context)
         if self.NODATA in parameters and parameters[self.NODATA] is not None:
@@ -215,9 +213,9 @@ class warp(GdalAlgorithm):
             arguments.append(extent.yMaximum())
 
             extentCrs = self.parameterAsCrs(parameters, self.TARGET_EXTENT_CRS, context)
-            if extentCrs:
+            if extentCrs.isValid():
                 arguments.append('-te_srs')
-                arguments.append(extentCrs.authid())
+                arguments.append(GdalUtils.gdal_crs_string(extentCrs))
 
         if self.parameterAsBoolean(parameters, self.MULTITHREADING, context):
             arguments.append('-multi')

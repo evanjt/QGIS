@@ -54,7 +54,8 @@ void QgsFeatureListView::setModel( QgsFeatureListModel *featureListModel )
   mCurrentEditSelectionModel = new QItemSelectionModel( mModel->masterModel(), this );
   if ( !mFeatureSelectionManager )
   {
-    mFeatureSelectionManager = new QgsVectorLayerSelectionManager( mModel->layerCache()->layer(), mModel );
+    mOwnedFeatureSelectionManager = new QgsVectorLayerSelectionManager( mModel->layerCache()->layer(), mModel );
+    mFeatureSelectionManager = mOwnedFeatureSelectionManager;
   }
 
   mFeatureSelectionModel = new QgsFeatureSelectionModel( featureListModel, featureListModel, mFeatureSelectionManager, this );
@@ -135,8 +136,10 @@ void QgsFeatureListView::mousePressEvent( QMouseEvent *event )
 
     if ( QgsFeatureListViewDelegate::EditElement == mItemDelegate->positionToElement( event->pos() ) )
     {
+
       mEditSelectionDrag = true;
-      setEditSelection( mModel->mapToMaster( index ), QItemSelectionModel::ClearAndSelect );
+      if ( index.isValid() )
+        setEditSelection( mModel->mapToMaster( index ), QItemSelectionModel::ClearAndSelect );
     }
     else
     {
@@ -186,18 +189,27 @@ void QgsFeatureListView::selectAll()
 void QgsFeatureListView::setEditSelection( const QgsFeatureIds &fids )
 {
   QItemSelection selection;
+  QModelIndex firstModelIdx;
 
   const auto constFids = fids;
   for ( QgsFeatureId fid : constFids )
   {
-    selection.append( QItemSelectionRange( mModel->mapToMaster( mModel->fidToIdx( fid ) ) ) );
+    QModelIndex modelIdx = mModel->fidToIdx( fid );
+
+    if ( ! firstModelIdx.isValid() )
+      firstModelIdx = modelIdx;
+
+    selection.append( QItemSelectionRange( mModel->mapToMaster( modelIdx ) ) );
   }
 
   bool ok = true;
   emit aboutToChangeEditSelection( ok );
 
   if ( ok )
+  {
     mCurrentEditSelectionModel->select( selection, QItemSelectionModel::ClearAndSelect );
+    scrollTo( firstModelIdx );
+  }
 }
 
 void QgsFeatureListView::setEditSelection( const QModelIndex &index, QItemSelectionModel::SelectionFlags command )
@@ -205,13 +217,14 @@ void QgsFeatureListView::setEditSelection( const QModelIndex &index, QItemSelect
   bool ok = true;
   emit aboutToChangeEditSelection( ok );
 
-#ifdef QGISDEBUG
-  if ( index.model() != mModel->masterModel() )
-    qWarning() << "Index from wrong model passed in";
-#endif
+  // cppcheck-suppress assertWithSideEffect
+  Q_ASSERT( index.model() == mModel->masterModel() || !index.isValid() );
 
   if ( ok )
+  {
     mCurrentEditSelectionModel->select( index, command );
+    scrollTo( index );
+  }
 }
 
 void QgsFeatureListView::repaintRequested( const QModelIndexList &indexes )
@@ -230,17 +243,25 @@ void QgsFeatureListView::repaintRequested()
 
 void QgsFeatureListView::mouseMoveEvent( QMouseEvent *event )
 {
-  QPoint pos = event->pos();
-
-  QModelIndex index = indexAt( pos );
-
-  if ( mEditSelectionDrag )
+  if ( mModel )
   {
-    setEditSelection( mModel->mapToMaster( index ), QItemSelectionModel::ClearAndSelect );
+    QPoint pos = event->pos();
+
+    QModelIndex index = indexAt( pos );
+
+    if ( mEditSelectionDrag )
+    {
+      if ( index.isValid() )
+        setEditSelection( mModel->mapToMaster( index ), QItemSelectionModel::ClearAndSelect );
+    }
+    else
+    {
+      selectRow( index, false );
+    }
   }
   else
   {
-    selectRow( index, false );
+    QgsDebugMsg( QStringLiteral( "No model assigned to this view" ) );
   }
 }
 
@@ -325,7 +346,11 @@ void QgsFeatureListView::contextMenuEvent( QContextMenuEvent *event )
 
     QgsActionMenu *menu = new QgsActionMenu( mModel->layerCache()->layer(), feature, QStringLiteral( "Feature" ), this );
 
-    emit willShowContextMenu( menu, index );
+    // Index is from feature list model, but we need an index from the
+    // filter model to be passed to listeners, using fid instead would
+    // have been much better in term of bugs (and headaches) but this
+    // belongs to the API unfortunately.
+    emit willShowContextMenu( menu, mModel->mapToSource( index ) );
 
     menu->exec( event->globalPos() );
   }
@@ -360,7 +385,12 @@ void QgsFeatureListView::selectRow( const QModelIndex &index, bool anchor )
 void QgsFeatureListView::ensureEditSelection( bool inSelection )
 {
   if ( !mModel->rowCount() )
+  {
+    // not sure this is the best place to emit from
+    // this will allow setting the counter to zero in the browsing panel
+    emit currentEditSelectionProgressChanged( 0, 0 );
     return;
+  }
 
   const QModelIndexList selectedIndexes = mCurrentEditSelectionModel->selectedIndexes();
 
@@ -373,7 +403,7 @@ void QgsFeatureListView::ensureEditSelection( bool inSelection )
   // could fall back to
   bool validEditSelectionAvailable = false;
 
-  if ( selectedIndexes.isEmpty() || mModel->mapFromMaster( selectedIndexes.first() ).row() == -1 )
+  if ( selectedIndexes.isEmpty() || !selectedIndexes.first().isValid() || mModel->mapFromMaster( selectedIndexes.first() ).row() == -1 )
   {
     validEditSelectionAvailable = false;
   }
@@ -457,10 +487,15 @@ void QgsFeatureListView::ensureEditSelection( bool inSelection )
 
 void QgsFeatureListView::setFeatureSelectionManager( QgsIFeatureSelectionManager *featureSelectionManager )
 {
-  delete mFeatureSelectionManager;
-
   mFeatureSelectionManager = featureSelectionManager;
 
   if ( mFeatureSelectionModel )
     mFeatureSelectionModel->setFeatureSelectionManager( mFeatureSelectionManager );
+
+  // only delete the owned selection manager and not one created from outside
+  if ( mOwnedFeatureSelectionManager )
+  {
+    mOwnedFeatureSelectionManager->deleteLater();
+    mOwnedFeatureSelectionManager = nullptr;
+  }
 }

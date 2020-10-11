@@ -43,9 +43,6 @@ QgsDecorationTitleDialog::QgsDecorationTitleDialog( QgsDecorationTitle &deco, QW
   connect( mInsertExpressionButton, &QPushButton::clicked, this, &QgsDecorationTitleDialog::mInsertExpressionButton_clicked );
   connect( buttonBox, &QDialogButtonBox::helpRequested, this, &QgsDecorationTitleDialog::showHelp );
 
-  // once the documentation for this dialog is added, remove the line below
-  buttonBox->button( QDialogButtonBox::Help )->setVisible( false );
-
   QPushButton *applyButton = buttonBox->button( QDialogButtonBox::Apply );
   connect( applyButton, &QAbstractButton::clicked, this, &QgsDecorationTitleDialog::apply );
 
@@ -55,7 +52,7 @@ QgsDecorationTitleDialog::QgsDecorationTitleDialog( QgsDecorationTitle &deco, QW
   txtTitleText->setAcceptRichText( false );
   if ( !mDeco.enabled() && mDeco.mLabelText.isEmpty() )
   {
-    QString defaultString = QStringLiteral( "%1" ).arg( QgsProject::instance()->metadata().title() );
+    QString defaultString = QgsProject::instance()->metadata().title();
     txtTitleText->setPlainText( defaultString );
   }
   else
@@ -76,7 +73,13 @@ QgsDecorationTitleDialog::QgsDecorationTitleDialog( QgsDecorationTitle &deco, QW
   cboPlacement->addItem( tr( "Bottom Left" ), QgsDecorationItem::BottomLeft );
   cboPlacement->addItem( tr( "Bottom Center" ), QgsDecorationItem::BottomCenter );
   cboPlacement->addItem( tr( "Bottom Right" ), QgsDecorationItem::BottomRight );
+  connect( cboPlacement, qgis::overload<int>::of( &QComboBox::currentIndexChanged ), this, [ = ]( int )
+  {
+    spnHorizontal->setMinimum( cboPlacement->currentData() == QgsDecorationItem::TopCenter || cboPlacement->currentData() == QgsDecorationItem::BottomCenter ? -100 : 0 );
+  } );
   cboPlacement->setCurrentIndex( cboPlacement->findData( mDeco.placement() ) );
+
+  spnHorizontal->setClearValue( 0 );
   spnHorizontal->setValue( mDeco.mMarginHorizontal );
   spnVertical->setValue( mDeco.mMarginVertical );
   wgtUnitSelection->setUnits( QgsUnitTypes::RenderUnitList() << QgsUnitTypes::RenderMillimeters << QgsUnitTypes::RenderPercentage << QgsUnitTypes::RenderPixels );
@@ -107,6 +110,8 @@ void QgsDecorationTitleDialog::mInsertExpressionButton_clicked()
   if ( selText.startsWith( QLatin1String( "[%" ) ) && selText.endsWith( QLatin1String( "%]" ) ) )
     selText = selText.mid( 2, selText.size() - 4 );
 
+  selText = selText.replace( QChar( 0x2029 ), QChar( '\n' ) );
+
   QgsExpressionBuilderDialog exprDlg( nullptr, selText, this, QStringLiteral( "generic" ), QgisApp::instance()->mapCanvas()->mapSettings().expressionContext() );
 
   exprDlg.setWindowTitle( QObject::tr( "Insert Expression" ) );
@@ -135,5 +140,5 @@ void QgsDecorationTitleDialog::apply()
 
 void QgsDecorationTitleDialog::showHelp()
 {
-  QgsHelp::openHelp( QStringLiteral( "introduction/general_tools.html#title-label" ) );
+  QgsHelp::openHelp( QStringLiteral( "introduction/general_tools.html#title_label_decoration" ) );
 }

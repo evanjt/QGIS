@@ -26,6 +26,7 @@
 #include "qgsfieldformatterregistry.h"
 #include "qgsfieldformatter.h"
 #include "qgsapplication.h"
+#include "qgsfeatureid.h"
 
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -40,7 +41,7 @@ QgsJsonExporter::QgsJsonExporter( QgsVectorLayer *vectorLayer, int precision )
     mCrs = vectorLayer->crs();
     mTransform.setSourceCrs( mCrs );
   }
-  mTransform.setDestinationCrs( QgsCoordinateReferenceSystem( 4326, QgsCoordinateReferenceSystem::EpsgCrsId ) );
+  mTransform.setDestinationCrs( QgsCoordinateReferenceSystem( QStringLiteral( "EPSG:4326" ) ) );
 }
 
 void QgsJsonExporter::setVectorLayer( QgsVectorLayer *vectorLayer )
@@ -94,6 +95,10 @@ json QgsJsonExporter::exportFeatureToJsonObject( const QgsFeature &feature, cons
       featureJson["id"] = id.toString().toStdString();
     }
   }
+  else if ( FID_IS_NULL( feature.id() ) )
+  {
+    featureJson["id"] = nullptr;
+  }
   else
   {
     featureJson["id"] = feature.id();
@@ -107,7 +112,7 @@ json QgsJsonExporter::exportFeatureToJsonObject( const QgsFeature &feature, cons
       try
       {
         QgsGeometry transformed = geom;
-        if ( transformed.transform( mTransform ) == 0 )
+        if ( mTransformGeometries && transformed.transform( mTransform ) == 0 )
           geom = transformed;
       }
       catch ( QgsCsException &cse )
@@ -144,8 +149,8 @@ json QgsJsonExporter::exportFeatureToJsonObject( const QgsFeature &feature, cons
     {
       QgsFields fields = mLayer ? mLayer->fields() : feature.fields();
       // List of formatters through we want to pass the values
-      QStringList formattersWhiteList;
-      formattersWhiteList << QStringLiteral( "KeyValue" )
+      QStringList formattersAllowList;
+      formattersAllowList << QStringLiteral( "KeyValue" )
                           << QStringLiteral( "List" )
                           << QStringLiteral( "ValueRelation" )
                           << QStringLiteral( "ValueMap" );
@@ -161,7 +166,7 @@ json QgsJsonExporter::exportFeatureToJsonObject( const QgsFeature &feature, cons
         {
           const QgsEditorWidgetSetup setup = fields.at( i ).editorWidgetSetup();
           const QgsFieldFormatter *fieldFormatter = QgsApplication::fieldFormatterRegistry()->fieldFormatter( setup.type() );
-          if ( formattersWhiteList.contains( fieldFormatter->id() ) )
+          if ( formattersAllowList.contains( fieldFormatter->id() ) )
             val = fieldFormatter->representValue( mLayer.data(), i, setup.config(), QVariant(), val );
         }
 
@@ -248,11 +253,17 @@ json QgsJsonExporter::exportFeaturesToJsonObject( const QgsFeatureList &features
 
 QgsFeatureList QgsJsonUtils::stringToFeatureList( const QString &string, const QgsFields &fields, QTextCodec *encoding )
 {
+  if ( !encoding )
+    encoding = QTextCodec::codecForName( "UTF-8" );
+
   return QgsOgrUtils::stringToFeatureList( string, fields, encoding );
 }
 
 QgsFields QgsJsonUtils::stringToFields( const QString &string, QTextCodec *encoding )
 {
+  if ( !encoding )
+    encoding = QTextCodec::codecForName( "UTF-8" );
+
   return QgsOgrUtils::stringToFields( string, encoding );
 }
 
@@ -395,18 +406,18 @@ json QgsJsonUtils::jsonFromVariant( const QVariant &val )
   json j;
   if ( val.type() == QVariant::Type::Map )
   {
-    const auto vMap = val.toMap();
-    auto jMap = json::object();
+    const QVariantMap &vMap = val.toMap();
+    json jMap = json::object();
     for ( auto it = vMap.constBegin(); it != vMap.constEnd(); it++ )
     {
       jMap[ it.key().toStdString() ] = jsonFromVariant( it.value() );
     }
     j = jMap;
   }
-  else if ( val.type() == QVariant::Type::List )
+  else if ( val.type() == QVariant::Type::List || val.type() == QVariant::Type::StringList )
   {
-    const auto vList = val.toList();
-    auto jList = json::array();
+    const QVariantList &vList = val.toList();
+    json jList = json::array();
     for ( const auto &v : vList )
     {
       jList.push_back( jsonFromVariant( v ) );
@@ -430,6 +441,9 @@ json QgsJsonUtils::jsonFromVariant( const QVariant &val )
       case QMetaType::Bool:
         j = val.toBool();
         break;
+      case QMetaType::QByteArray:
+        j = val.toByteArray().toBase64().toStdString();
+        break;
       default:
         j = val.toString().toStdString();
         break;
@@ -440,11 +454,14 @@ json QgsJsonUtils::jsonFromVariant( const QVariant &val )
 
 QVariant QgsJsonUtils::parseJson( const std::string &jsonString )
 {
+  // tracks whether entire json string is a primitive
+  bool isPrimitive = true;
+
   std::function<QVariant( json )> _parser { [ & ]( json jObj ) -> QVariant {
       QVariant result;
-      QString errorMessage;
       if ( jObj.is_array() )
       {
+        isPrimitive = false;
         QVariantList results;
         for ( const auto &item : jObj )
         {
@@ -454,6 +471,7 @@ QVariant QgsJsonUtils::parseJson( const std::string &jsonString )
       }
       else if ( jObj.is_object() )
       {
+        isPrimitive = false;
         QVariantMap results;
         for ( const auto  &item : jObj.items() )
         {
@@ -484,7 +502,14 @@ QVariant QgsJsonUtils::parseJson( const std::string &jsonString )
         }
         else if ( jObj.is_string() )
         {
-          result = QString::fromStdString( jObj.get<std::string>() );
+          if ( isPrimitive && jObj.get<std::string>().length() == 0 )
+          {
+            result = QString::fromStdString( jObj.get<std::string>() ).append( "\"" ).insert( 0, "\"" );
+          }
+          else
+          {
+            result = QString::fromStdString( jObj.get<std::string>() );
+          }
         }
         else if ( jObj.is_null() )
         {

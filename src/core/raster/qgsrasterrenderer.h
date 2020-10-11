@@ -87,6 +87,29 @@ class CORE_EXPORT QgsRasterRenderer : public QgsRasterInterface
      */
     double opacity() const { return mOpacity; }
 
+    /**
+     * Returns the color to use for shading nodata pixels.
+     *
+     * If the returned value is an invalid color then the default transparent rendering of
+     * nodata values will be used.
+     *
+     * \see renderColorForNodataPixel()
+     * \see setNodataColor()
+     * \since QGIS 3.12
+     */
+    QColor nodataColor() const { return mNodataColor; }
+
+    /**
+     * Sets the \a color to use for shading nodata pixels.
+     *
+     * If \a color is an invalid color then the default transparent rendering of
+     * nodata values will be used.
+     *
+     * \see nodataColor()
+     * \since QGIS 3.12
+     */
+    void setNodataColor( const QColor &color ) { mNodataColor = color; }
+
     void setRasterTransparency( QgsRasterTransparency *t SIP_TRANSFER );
     const QgsRasterTransparency *rasterTransparency() const { return mRasterTransparency; }
 
@@ -101,8 +124,9 @@ class CORE_EXPORT QgsRasterRenderer : public QgsRasterInterface
 
     /**
      * Copies common properties like opacity / transparency data from other renderer.
-     *  Useful when cloning renderers.
-     *  \since QGIS 2.16  */
+     * Useful when cloning renderers.
+     * \since QGIS 2.16
+     */
     void copyCommonProperties( const QgsRasterRenderer *other, bool copyMinMaxOrigin = true );
 
     //! Returns a list of band numbers used by the renderer
@@ -116,7 +140,8 @@ class CORE_EXPORT QgsRasterRenderer : public QgsRasterInterface
 
     /**
      * Used from subclasses to create SLD Rule elements following SLD v1.0 specs
-     * \since QGIS 3.6  */
+     * \since QGIS 3.6
+    */
     virtual void toSld( QDomDocument &doc, QDomElement &element, const QgsStringMap &props = QgsStringMap() ) const;
 
     /**
@@ -144,13 +169,27 @@ class CORE_EXPORT QgsRasterRenderer : public QgsRasterInterface
 
     /**
      * Read alpha value from band. Is combined with value from raster transparency / global alpha value.
-        Default: -1 (not set)*/
+     * Default: -1 (not set)
+    */
     int mAlphaBand = -1;
 
     //! Origin of min/max values
     QgsRasterMinMaxOrigin mMinMaxOrigin;
 
+    /**
+     * Returns the color for the renderer to use to represent nodata pixels.
+     *
+     * Subclasses should use this rather then nodataColor() to determine the color to use for nodata pixels
+     * during an actual rendering operation.
+     *
+     * \since QGIS 3.10
+     */
+    QRgb renderColorForNodataPixel() const;
+
   private:
+
+    QColor mNodataColor;
+
 #ifdef SIP_RUN
     QgsRasterRenderer( const QgsRasterRenderer & );
     const QgsRasterRenderer &operator=( const QgsRasterRenderer & );

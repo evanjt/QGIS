@@ -28,17 +28,13 @@
 QgsAmsSourceSelect::QgsAmsSourceSelect( QWidget *parent, Qt::WindowFlags fl, QgsProviderRegistry::WidgetMode widgetMode )
   : QgsArcGisServiceSourceSelect( QStringLiteral( "ARCGISMAPSERVER" ), QgsArcGisServiceSourceSelect::MapService, parent, fl, widgetMode )
 {
-
-  // import/export of connections not supported yet
-  btnLoad->hide();
-  btnSave->hide();
 }
 
 bool QgsAmsSourceSelect::connectToService( const QgsOwsConnection &connection )
 {
   QString errorTitle, errorMessage;
 
-  const QString authcfg = connection.uri().param( QStringLiteral( "authcfg" ) );
+  const QString authcfg = connection.uri().authConfigId();
   const QString baseUrl = connection.uri().param( QStringLiteral( "url" ) );
   const QString referer = connection.uri().param( QStringLiteral( "referer" ) );
   QgsStringMap headers;

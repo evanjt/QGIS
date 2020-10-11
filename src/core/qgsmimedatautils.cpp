@@ -30,7 +30,7 @@ static const char *QGIS_URILIST_MIMETYPE = "application/x-vnd.qgis.qgis.uri";
 
 QgsMimeDataUtils::Uri::Uri( const QString &encData )
 {
-  QgsDebugMsg( "encData: " + encData );
+  QgsDebugMsgLevel( "encData: " + encData, 4 );
   const QStringList decoded = decode( encData );
   if ( decoded.size() < 4 )
     return;
@@ -67,7 +67,7 @@ QgsMimeDataUtils::Uri::Uri( const QString &encData )
 QgsMimeDataUtils::Uri::Uri( QgsMapLayer *layer )
   : providerKey( layer->providerType() )
   , name( layer->name() )
-  , uri( layer->dataProvider()->dataSourceUri() )
+  , uri( layer->dataProvider() ? layer->dataProvider()->dataSourceUri() : layer->source() )
   , layerId( layer->id() )
   , pId( QString::number( QCoreApplication::applicationPid() ) )
 {
@@ -91,7 +91,14 @@ QgsMimeDataUtils::Uri::Uri( QgsMapLayer *layer )
       break;
     }
 
+    case QgsMapLayerType::VectorTileLayer:
+    {
+      layerType = QStringLiteral( "vector-tile" );
+      break;
+    }
+
     case QgsMapLayerType::PluginLayer:
+    case QgsMapLayerType::AnnotationLayer:
     {
       // plugin layers do not have a standard way of storing their URI...
       return;
@@ -210,7 +217,7 @@ QgsMimeDataUtils::UriList QgsMimeDataUtils::decodeUriList( const QMimeData *data
   while ( !stream.atEnd() )
   {
     stream >> xUri;
-    QgsDebugMsg( xUri );
+    QgsDebugMsgLevel( xUri, 4 );
     list.append( Uri( xUri ) );
   }
   return list;
@@ -266,7 +273,7 @@ QString QgsMimeDataUtils::encode( const QStringList &items )
   for ( const QString &item : constItems )
   {
     QString str = item;
-    str.replace( '\\', QStringLiteral( "\\\\" ) );
+    str.replace( '\\', QLatin1String( "\\\\" ) );
     str.replace( re, QStringLiteral( "\\:" ) );
     encoded += str + ':';
   }

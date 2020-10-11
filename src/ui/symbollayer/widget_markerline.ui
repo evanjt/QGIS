@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Form</string>
+   <string notr="true">Form</string>
   </property>
   <layout class="QGridLayout" name="gridLayout_2">
    <property name="leftMargin">
@@ -360,7 +360,7 @@
      <item row="1" column="0" colspan="5">
       <widget class="QCheckBox" name="chkRotateMarker">
        <property name="text">
-        <string>Rotate marker</string>
+        <string>Rotate marker to follow line direction</string>
        </property>
       </widget>
      </item>

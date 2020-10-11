@@ -36,7 +36,6 @@ from processing.tools.system import isWindows
 
 
 class gdalcalc(GdalAlgorithm):
-
     INPUT_A = 'INPUT_A'
     INPUT_B = 'INPUT_B'
     INPUT_C = 'INPUT_C'
@@ -255,7 +254,9 @@ class gdalcalc(GdalAlgorithm):
 
         options = self.parameterAsString(parameters, self.OPTIONS, context)
         if options:
-            arguments.extend(GdalUtils.parseCreationOptions(options))
+            parts = options.split('|')
+            for p in parts:
+                arguments.append('--co ' + p)
 
         if self.EXTRA in parameters and parameters[self.EXTRA] not in (None, ''):
             extra = self.parameterAsString(parameters, self.EXTRA, context)

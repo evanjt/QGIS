@@ -40,11 +40,10 @@ using namespace inja;
 QVariantMap QgsServerOgcApiHandler::values( const QgsServerApiContext &context ) const
 {
   QVariantMap result ;
-  QVariantList positional;
   const auto constParameters { parameters( context ) };
   for ( const auto &p : constParameters )
   {
-    // value() calls the validators and throw an exception if validation fails
+    // value() calls the validators and throws an exception if validation fails
     result[p.name()] = p.value( context );
   }
   const auto match { path().match( context.request()->url().toString() ) };
@@ -78,25 +77,30 @@ QList<QgsServerOgcApi::ContentType> QgsServerOgcApiHandler::contentTypes() const
 
 void QgsServerOgcApiHandler::handleRequest( const QgsServerApiContext &context ) const
 {
-  Q_UNUSED( context );
+  Q_UNUSED( context )
   throw QgsServerApiNotImplementedException( QStringLiteral( "Subclasses must implement handleRequest" ) );
 }
 
 QString QgsServerOgcApiHandler::contentTypeForAccept( const QString &accept ) const
 {
-
-  QString result;
-  const auto constMimes { QgsServerOgcApi::contentTypeMimes() };
-  for ( const auto &ct : constMimes )
+  for ( auto it = QgsServerOgcApi::contentTypeMimes().constBegin();
+        it != QgsServerOgcApi::contentTypeMimes().constEnd(); ++it )
   {
-    if ( accept.contains( ct ) )
+    const auto constValues = it.value();
+    for ( const auto &value : constValues )
     {
-      result = ct;
-      break;
+      if ( accept.contains( value, Qt::CaseSensitivity::CaseInsensitive ) )
+      {
+        return value;
+      }
     }
   }
-  return result;
+  // Log level info because this is not completely unexpected
+  QgsMessageLog::logMessage( QStringLiteral( "Content type for accept %1 not found!" ).arg( accept ),
+                             QStringLiteral( "Server" ),
+                             Qgis::Info );
 
+  return QString();
 }
 
 void QgsServerOgcApiHandler::write( json &data, const QgsServerApiContext &context, const json &htmlMetadata ) const
@@ -115,10 +119,14 @@ void QgsServerOgcApiHandler::write( json &data, const QgsServerApiContext &conte
     case QgsServerOgcApi::ContentType::GEOJSON:
     case QgsServerOgcApi::ContentType::JSON:
     case QgsServerOgcApi::ContentType::OPENAPI3:
-      jsonDump( data, context, QgsServerOgcApi::contentTypeMimes().value( contentType ) );
+      jsonDump( data, context, QgsServerOgcApi::contentTypeMimes().value( contentType ).first() );
+      break;
+    case QgsServerOgcApi::ContentType::XML:
+      // Not handled yet
       break;
   }
 }
+
 void QgsServerOgcApiHandler::write( QVariant &data, const QgsServerApiContext &context, const QVariantMap &htmlMetadata ) const
 {
   json j = QgsJsonUtils::jsonFromVariant( data );
@@ -153,7 +161,7 @@ std::string QgsServerOgcApiHandler::href( const QgsServerApiContext &context, co
   url.setPath( url.path() + extraPath );
 
   // (re-)add extension
-  // JSON is the default anyway, we don'n need to add it
+  // JSON is the default anyway so we don't need to add it
   if ( ! extension.isEmpty() )
   {
     // Remove trailing slashes if any.
@@ -170,9 +178,14 @@ std::string QgsServerOgcApiHandler::href( const QgsServerApiContext &context, co
 
 void QgsServerOgcApiHandler::jsonDump( json &data, const QgsServerApiContext &context, const QString &contentType ) const
 {
-  QDateTime time { QDateTime::currentDateTime() };
-  time.setTimeSpec( Qt::TimeSpec::UTC );
-  data["timeStamp"] = time.toString( Qt::DateFormat::ISODate ).toStdString() ;
+  // Do not append timestamp to openapi
+  if ( ! QgsServerOgcApi::contentTypeMimes().value( QgsServerOgcApi::ContentType::OPENAPI3 ).contains( contentType, Qt::CaseSensitivity::CaseInsensitive ) )
+  {
+    QDateTime time { QDateTime::currentDateTime() };
+    time.setTimeSpec( Qt::TimeSpec::UTC );
+    data["timeStamp"] = time.toString( Qt::DateFormat::ISODate ).toStdString() ;
+  }
+  context.response()->setStatusCode( 200 );
   context.response()->setHeader( QStringLiteral( "Content-Type" ), contentType );
 #ifdef QGISDEBUG
   context.response()->write( data.dump( 2 ) );
@@ -183,7 +196,7 @@ void QgsServerOgcApiHandler::jsonDump( json &data, const QgsServerApiContext &co
 
 json QgsServerOgcApiHandler::schema( const QgsServerApiContext &context ) const
 {
-  Q_UNUSED( context );
+  Q_UNUSED( context )
   return nullptr;
 }
 
@@ -230,7 +243,7 @@ QgsVectorLayer *QgsServerOgcApiHandler::layerFromContext( const QgsServerApiCont
   }
   const QString collectionId { match.captured( QStringLiteral( "collectionId" ) ) };
   // May throw if not found
-  return layerFromCollection( context, collectionId );
+  return layerFromCollectionId( context, collectionId );
 
 }
 
@@ -244,11 +257,11 @@ const QString QgsServerOgcApiHandler::templatePath( const QgsServerApiContext &c
 {
   // resources/server/api + /ogc/templates/ + operationId + .html
   QString path { context.serverInterface()->serverSettings()->apiResourcesDirectory() };
-  path += QStringLiteral( "/ogc/templates" );
+  path += QLatin1String( "/ogc/templates" );
   path += context.apiRootPath();
   path += '/';
   path += QString::fromStdString( operationId() );
-  path += QStringLiteral( ".html" );
+  path += QLatin1String( ".html" );
   return path;
 }
 
@@ -289,7 +302,15 @@ void QgsServerOgcApiHandler::htmlDump( const json &data, const QgsServerApiConte
       QFileInfo fi{ url.path() };
       auto suffix { fi.suffix() };
       auto fName { fi.filePath()};
-      fName.chop( suffix.length() + 1 );
+      if ( !suffix.isEmpty() )
+      {
+        fName.chop( suffix.length() + 1 );
+      }
+      // Chop any ending slashes
+      while ( fName.endsWith( '/' ) )
+      {
+        fName.chop( 1 );
+      }
       fName += '/' + QString::number( args.at( 0 )->get<QgsFeatureId>( ) );
       if ( !suffix.isEmpty() )
       {
@@ -348,12 +369,49 @@ void QgsServerOgcApiHandler::htmlDump( const json &data, const QgsServerApiConte
       return QgsServerOgcApi::contentTypeToStdString( ct );
     } );
 
+    // Replace newlines with <br>
+    env.add_callback( "nl2br", 1, [ = ]( Arguments & args )
+    {
+      QString text { QString::fromStdString( args.at( 0 )->get<std::string>( ) ) };
+      return text.replace( '\n', QLatin1String( "<br>" ) ).toStdString();
+    } );
+
+
+    // Returns a list of parameter component data from components -> parameters by ref name
+    // parameter( <ref object> )
+    env.add_callback( "component_parameter", 1, [ = ]( Arguments & args )
+    {
+      json ret = json::array();
+      json ref = args.at( 0 )->get<json>( );
+      if ( ! ref.is_object() )
+      {
+        return ret;
+      }
+      try
+      {
+        QString name = QString::fromStdString( ref["$ref"] );
+        name = name.split( '/' ).last();
+        ret.push_back( data["components"]["parameters"][name.toStdString()] );
+      }
+      catch ( std::exception & )
+      {
+        // Do nothing
+      }
+      return ret;
+    } );
+
 
     // Static: returns the full URL to the specified static <path>
     env.add_callback( "static", 1, [ = ]( Arguments & args )
     {
       auto asset( args.at( 0 )->get<std::string>( ) );
-      return context.matchedPath().toStdString() + "/static/" + asset;
+      QString matchedPath { context.matchedPath() };
+      // If its the root path '/' strip it!
+      if ( matchedPath == '/' )
+      {
+        matchedPath.clear();
+      }
+      return matchedPath.toStdString() + "/static/" + asset;
     } );
 
     context.response()->write( env.render_file( pathInfo.fileName().toStdString(), data ) );
@@ -394,8 +452,17 @@ QgsServerOgcApi::ContentType QgsServerOgcApiHandler::contentTypeFromRequest( con
     const QString ctFromAccept { contentTypeForAccept( accept ) };
     if ( ! ctFromAccept.isEmpty() )
     {
-      result = QgsServerOgcApi::contentTypeMimes().key( ctFromAccept );
-      found = true;
+      auto it = QgsServerOgcApi::contentTypeMimes().constBegin();
+      while ( ! found && it != QgsServerOgcApi::contentTypeMimes().constEnd() )
+      {
+        int idx = it.value().indexOf( ctFromAccept );
+        if ( idx >= 0 )
+        {
+          found = true;
+          result = it.key();
+        }
+        it++;
+      }
     }
     else
     {
@@ -449,8 +516,9 @@ QString QgsServerOgcApiHandler::parentLink( const QUrl &url, int levels )
     path = path.replace( re, QString() );
   }
   QUrl result( url );
+  QUrlQuery query( result );
   QList<QPair<QString, QString> > qi;
-  const auto constItems { result.queryItems( ) };
+  const auto constItems { query.queryItems( ) };
   for ( const auto &i : constItems )
   {
     if ( i.first.compare( QStringLiteral( "MAP" ), Qt::CaseSensitivity::CaseInsensitive ) == 0 )
@@ -458,17 +526,24 @@ QString QgsServerOgcApiHandler::parentLink( const QUrl &url, int levels )
       qi.push_back( i );
     }
   }
-  result.setQueryItems( qi );
+  // Make sure the parent link ends with a slash
+  if ( ! path.endsWith( '/' ) )
+  {
+    path.append( '/' );
+  }
+  QUrlQuery resultQuery;
+  resultQuery.setQueryItems( qi );
+  result.setQuery( resultQuery );
   result.setPath( path );
   return result.toString();
 }
 
-QgsVectorLayer *QgsServerOgcApiHandler::layerFromCollection( const QgsServerApiContext &context, const QString &collectionId )
+QgsVectorLayer *QgsServerOgcApiHandler::layerFromCollectionId( const QgsServerApiContext &context, const QString &collectionId )
 {
   const auto mapLayers { context.project()->mapLayersByShortName<QgsVectorLayer *>( collectionId ) };
   if ( mapLayers.count() != 1 )
   {
-    throw QgsServerApiImproperlyConfiguredException( QStringLiteral( "Collection with given id (%1) was not found or multiple matches were found" ).arg( collectionId ) );
+    throw QgsServerApiNotFoundError( QStringLiteral( "Collection with given id (%1) was not found or multiple matches were found" ).arg( collectionId ) );
   }
   return mapLayers.first();
 }
@@ -477,27 +552,23 @@ json QgsServerOgcApiHandler::defaultResponse()
 {
   static json defRes =
   {
+    { "description", "An error occurred." },
     {
-      "default", {
-        { "description", "An error occurred." },
+      "content", {
         {
-          "content", {
+          "application/json", {
             {
-              "application/json", {
-                {
-                  "schema", {
-                    { "$ref", "#/components/schemas/exception" }
-                  }
-                },
-                {
-                  "text/html", {
-                    {
-                      "schema", {
-                        { "type", "string" }
-                      }
-                    }
-                  }
-                }
+              "schema", {
+                { "$ref", "#/components/schemas/exception" }
+              }
+            }
+          }
+        },
+        {
+          "text/html", {
+            {
+              "schema", {
+                { "type", "string" }
               }
             }
           }

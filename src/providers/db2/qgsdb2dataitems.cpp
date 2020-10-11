@@ -32,7 +32,7 @@
 static const QString PROVIDER_KEY = QStringLiteral( "DB2" );
 
 QgsDb2ConnectionItem::QgsDb2ConnectionItem( QgsDataItem *parent, const QString name, const QString path )
-  : QgsDataCollectionItem( parent, name, path )
+  : QgsDataCollectionItem( parent, name, path, QStringLiteral( "DB2" ) )
 {
   mIconName = QStringLiteral( "mIconConnect.svg" );
   mCapabilities |= Collapse;
@@ -167,7 +167,7 @@ QVector<QgsDataItem *> QgsDb2ConnectionItem::createChildren()
   QSqlDatabase db = QgsDb2Provider::getDatabase( connInfo, errorMsg );
   if ( errorMsg.isEmpty() )
   {
-    //children.append( new QgsFavouritesItem(this, "connection successful", mPath + "/success"));
+    //children.append( new QgsFavoritesItem(this, "connection successful", mPath + "/success"));
     QgsDebugMsg( "DB open successful for connection " + db.connectionName() );
   }
   else
@@ -182,12 +182,12 @@ QVector<QgsDataItem *> QgsDb2ConnectionItem::createChildren()
 
   /* Enabling the DB2 Spatial Extender creates the DB2GSE schema and tables,
      so the Extender is either not enabled or set up if SQLCODE -204 is returned. */
-  if ( sqlcode == QStringLiteral( "-204" ) )
+  if ( sqlcode == QLatin1String( "-204" ) )
   {
     children.append( new QgsErrorItem( this, tr( "DB2 Spatial Extender is not enabled or set up." ), mPath + "/error" ) );
     return children;
   }
-  else if ( !sqlcode.isEmpty() && sqlcode != QStringLiteral( "0" ) )
+  else if ( !sqlcode.isEmpty() && sqlcode != QLatin1String( "0" ) )
   {
     children.append( new QgsErrorItem( this, db.lastError().text(), mPath + "/error" ) );
     return children;
@@ -326,7 +326,7 @@ bool QgsDb2ConnectionItem::handleDrop( const QMimeData *data, const QString &toS
   {
     QgsMessageOutput *output = QgsMessageOutput::createMessageOutput();
     output->setTitle( tr( "Import to DB2 database" ) );
-    output->setMessage( tr( "Failed to import some layers!\n\n" ) + importResults.join( QStringLiteral( "\n" ) ), QgsMessageOutput::MessageText );
+    output->setMessage( tr( "Failed to import some layers!\n\n" ) + importResults.join( QLatin1Char( '\n' ) ), QgsMessageOutput::MessageText );
     output->showMessage();
   }
 
@@ -334,7 +334,7 @@ bool QgsDb2ConnectionItem::handleDrop( const QMimeData *data, const QString &toS
 }
 
 QgsDb2RootItem::QgsDb2RootItem( QgsDataItem *parent, QString name, QString path )
-  : QgsDataCollectionItem( parent, name, path )
+  : QgsConnectionsRootItem( parent, name, path, QStringLiteral( "DB2" ) )
 {
   mIconName = QStringLiteral( "mIconDb2.svg" );
   populate();
@@ -389,7 +389,7 @@ QString QgsDb2LayerItem::createUri()
 }
 // ---------------------------------------------------------------------------
 QgsDb2SchemaItem::QgsDb2SchemaItem( QgsDataItem *parent, QString name, QString path )
-  : QgsDataCollectionItem( parent, name, path )
+  : QgsDataCollectionItem( parent, name, path, QStringLiteral( "DB2" ) )
 {
   mIconName = QStringLiteral( "mIconDbSchema.svg" );
 }
@@ -479,6 +479,11 @@ QString QgsDb2DataItemProvider::name()
   return QStringLiteral( "DB2" );
 }
 
+QString QgsDb2DataItemProvider::dataProviderKey() const
+{
+  return QStringLiteral( "DB2" );
+}
+
 int QgsDb2DataItemProvider::capabilities() const
 {
   return QgsDataProvider::Database;
@@ -487,6 +492,12 @@ int QgsDb2DataItemProvider::capabilities() const
 QgsDataItem *QgsDb2DataItemProvider::createDataItem( const QString &pathIn, QgsDataItem *parentItem )
 {
   Q_UNUSED( pathIn );
-  QgsDebugMsg( QStringLiteral( "DB2: Browser Panel; data item detected." ) );
+  QgsDebugMsgLevel( QStringLiteral( "DB2: Browser Panel; data item detected." ), 2 );
   return new QgsDb2RootItem( parentItem, PROVIDER_KEY, QStringLiteral( "DB2:" ) );
+}
+
+
+bool QgsDb2SchemaItem::layerCollection() const
+{
+  return true;
 }

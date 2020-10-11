@@ -41,7 +41,6 @@ pluginPath = os.path.split(os.path.split(os.path.dirname(__file__))[0])[0]
 
 
 class sieve(GdalAlgorithm):
-
     INPUT = 'INPUT'
     THRESHOLD = 'THRESHOLD'
     EIGHT_CONNECTEDNESS = 'EIGHT_CONNECTEDNESS'
@@ -112,7 +111,8 @@ class sieve(GdalAlgorithm):
 
         mask = self.parameterAsRasterLayer(parameters, self.MASK_LAYER, context)
         if mask:
-            arguments.append('-mask {}'.format(mask.source()))
+            arguments.append('-mask')
+            arguments.append(mask.source())
 
         out = self.parameterAsOutputLayer(parameters, self.OUTPUT, context)
         self.setOutputValue(self.OUTPUT, out)

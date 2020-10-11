@@ -26,6 +26,7 @@ import qgis
 from qgis.testing import start_app, unittest
 from qgis.core import QgsDataSourceUri
 from qgis.utils import iface
+from qgis.PyQt.QtCore import QObject
 
 start_app()
 
@@ -34,7 +35,7 @@ from db_manager.db_plugins.postgis.connector import PostGisDBConnector
 
 class TestDBManagerPostgisConnector(unittest.TestCase):
 
-    #def setUpClass():
+    # def setUpClass():
 
     def _getUser(self, connector):
         r = connector._execute(None, "SELECT USER")
@@ -51,7 +52,11 @@ class TestDBManagerPostgisConnector(unittest.TestCase):
     # See https://github.com/qgis/QGIS/issues/24525
     # and https://github.com/qgis/QGIS/issues/19005
     def test_dbnameLessURI(self):
-        c = PostGisDBConnector(QgsDataSourceUri())
+        obj = QObject()  # needs to be kept alive
+        obj.connectionName = lambda: 'fake'
+        obj.providerName = lambda: 'postgres'
+
+        c = PostGisDBConnector(QgsDataSourceUri(), obj)
         self.assertIsInstance(c, PostGisDBConnector)
         uri = c.uri()
 

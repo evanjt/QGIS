@@ -32,6 +32,9 @@ class QgsWcsDataItemGuiProvider : public QObject, public QgsDataItemGuiProvider
     static void newConnection( QgsDataItem *item );
     static void editConnection( QgsDataItem *item );
     static void deleteConnection( QgsDataItem *item );
+    static void refreshConnection( QgsDataItem *item );
+    static void saveConnections();
+    static void loadConnections( QgsDataItem *item );
 
 };
 

@@ -159,12 +159,16 @@ void TestQgsMapToolReshape::initTestCase()
   QgsSnappingConfig cfg = mCanvas->snappingUtils()->config();
   cfg.setMode( QgsSnappingConfig::AllLayers );
   cfg.setTolerance( 100 );
-  cfg.setType( QgsSnappingConfig::VertexAndSegment );
+  cfg.setTypeFlag( static_cast<QgsSnappingConfig::SnappingTypeFlag>( QgsSnappingConfig::VertexFlag | QgsSnappingConfig::SegmentFlag ) );
   cfg.setEnabled( true );
   mCanvas->snappingUtils()->setConfig( cfg );
-
   mCanvas->setLayers( QList<QgsMapLayer *>() << mLayerLineZ << mLayerPointZ << mLayerPolygonZ );
   mCanvas->setCurrentLayer( mLayerLineZ );
+
+  mCanvas->snappingUtils()->locatorForLayer( mLayerLineZ )->init();
+  mCanvas->snappingUtils()->locatorForLayer( mLayerPointZ )->init();
+  mCanvas->snappingUtils()->locatorForLayer( mLayerPolygonZ )->init();
+  mCanvas->snappingUtils()->locatorForLayer( mLayerTopo )->init();
 
   // create the tool
   mCaptureTool = new QgsMapToolReshape( mCanvas );
@@ -188,8 +192,6 @@ void TestQgsMapToolReshape::testReshapeZ()
 
   // test with default Z value = 333
   QgsSettings().setValue( QStringLiteral( "/qgis/digitizing/default_z_value" ), 333 );
-
-  QSet<QgsFeatureId> oldFids = utils.existingFeatureIds();
 
   // snap on a linestringz layer
   utils.mouseClick( 1, 2, Qt::LeftButton, Qt::KeyboardModifiers(), true );
@@ -233,8 +235,6 @@ void TestQgsMapToolReshape::testTopologicalEditing()
   // test with default Z value = 333
   QgsSettings().setValue( QStringLiteral( "/qgis/digitizing/default_z_value" ), 333 );
 
-  QSet<QgsFeatureId> oldFids = utils.existingFeatureIds();
-
   utils.mouseClick( 4, 4, Qt::LeftButton, Qt::KeyboardModifiers(), true );
   utils.mouseClick( 7, 2, Qt::LeftButton, Qt::KeyboardModifiers(), true );
   utils.mouseClick( 4, 0, Qt::LeftButton, Qt::KeyboardModifiers(), true );
@@ -273,7 +273,7 @@ void TestQgsMapToolReshape::reshapeWithBindingLine()
   QList<QgsMapLayer *> layers;
   layers.append( vl.get() );
 
-  QgsCoordinateReferenceSystem srs( 4326, QgsCoordinateReferenceSystem::EpsgCrsId );
+  QgsCoordinateReferenceSystem srs( QStringLiteral( "EPSG:4326" ) );
   mQgisApp->mapCanvas()->setDestinationCrs( srs );
   mQgisApp->mapCanvas()->setLayers( layers );
   mQgisApp->mapCanvas()->setCurrentLayer( vl.get() );
@@ -285,7 +285,7 @@ void TestQgsMapToolReshape::reshapeWithBindingLine()
   QgsCompoundCurve curve0( *cl0.toCurveType() );
 
   QgsMapToolReshape tool0( mQgisApp->mapCanvas() );
-  tool0.mCaptureCurve = curve0;
+  tool0.addCurve( curve0.clone() );
 
   vl->startEditing();
   tool0.reshape( vl.get() );
@@ -305,7 +305,7 @@ void TestQgsMapToolReshape::reshapeWithBindingLine()
   QgsCompoundCurve curve1( *cl1.toCurveType() );
 
   QgsMapToolReshape tool1( mQgisApp->mapCanvas() );
-  tool1.mCaptureCurve = curve1;
+  tool1.addCurve( curve1.clone() );
 
   vl->startEditing();
   tool1.reshape( vl.get() );

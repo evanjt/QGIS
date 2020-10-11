@@ -21,7 +21,7 @@
 typedef QList<QgsDataItemProvider *> *dataItemProviders_t();
 
 QgsGeoNodeConnectionItem::QgsGeoNodeConnectionItem( QgsDataItem *parent, QString name, QString path, std::unique_ptr<QgsGeoNodeConnection> conn )
-  : QgsDataCollectionItem( parent, name, path )
+  : QgsDataCollectionItem( parent, name, path, QStringLiteral( "GeoNode" ) )
   , mGeoNodeName( parent->name() )
   , mUri( conn->uri().uri() )
 {
@@ -66,12 +66,12 @@ QVector<QgsDataItem *> QgsGeoNodeConnectionItem::createChildren()
 
 
 QgsGeoNodeServiceItem::QgsGeoNodeServiceItem( QgsDataItem *parent, QgsGeoNodeConnection *conn, QString serviceName, QString path )
-  : QgsDataCollectionItem( parent, serviceName, path )
+  : QgsDataCollectionItem( parent, serviceName, path, QStringLiteral( "GeoNode" ) )
   , mName( conn->connectionName() )
   , mServiceName( serviceName )
   , mConnection( conn )
 {
-  if ( serviceName == QStringLiteral( "WMS" ) || serviceName == QStringLiteral( "XYZ" ) )
+  if ( serviceName == QLatin1String( "WMS" ) || serviceName == QLatin1String( "XYZ" ) )
   {
     mIconName = QStringLiteral( "mIconWms.svg" );
   }
@@ -95,7 +95,7 @@ QVector<QgsDataItem *> QgsGeoNodeServiceItem::createChildren()
 
   while ( !skipProvider )
   {
-    const QString &key = mServiceName != QStringLiteral( "WFS" ) ? QStringLiteral( "wms" ) : mServiceName;
+    const QString &key = mServiceName != QLatin1String( "WFS" ) ? QStringLiteral( "wms" ) : mServiceName;
 
     const QList<QgsDataItemProvider *> providerList = QgsProviderRegistry::instance()->dataItemProviders( key );
     if ( providerList.isEmpty() )
@@ -125,7 +125,7 @@ QVector<QgsDataItem *> QgsGeoNodeServiceItem::createChildren()
       continue;
     }
 
-    if ( mServiceName == QStringLiteral( "XYZ" ) )
+    if ( mServiceName == QLatin1String( "XYZ" ) )
     {
       return items;
     }
@@ -186,7 +186,7 @@ void QgsGeoNodeServiceItem::replacePath( QgsDataItem *item, const QString &befor
 }
 
 QgsGeoNodeRootItem::QgsGeoNodeRootItem( QgsDataItem *parent, QString name, QString path )
-  : QgsDataCollectionItem( parent, name, path )
+  : QgsConnectionsRootItem( parent, name, path, QStringLiteral( "GeoNode" ) )
 {
   mCapabilities |= Fast;
   {
@@ -241,4 +241,10 @@ QgsDataItem *QgsGeoNodeDataItemProvider::createDataItem( const QString &path, Qg
   }
 
   return nullptr;
+}
+
+
+bool QgsGeoNodeServiceItem::layerCollection() const
+{
+  return true;
 }

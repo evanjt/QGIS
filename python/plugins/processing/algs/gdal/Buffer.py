@@ -36,7 +36,6 @@ from processing.algs.gdal.GdalUtils import GdalUtils
 
 
 class Buffer(GdalAlgorithm):
-
     INPUT = 'INPUT'
     FIELD = 'FIELD'
     GEOMETRY = 'GEOMETRY'
@@ -119,7 +118,7 @@ class Buffer(GdalAlgorithm):
         for f in fields:
             if f.name() == geometry:
                 continue
-            other_fields.append(f.name())
+            other_fields.append('"{}"'.format(f.name()))
 
         if other_fields:
             other_fields = ',*'
@@ -134,12 +133,12 @@ class Buffer(GdalAlgorithm):
         arguments.append('-sql')
 
         if dissolve or fieldName:
-            sql = "SELECT ST_Union(ST_Buffer({}, {})) AS {}{} FROM '{}'".format(geometry, distance, geometry, other_fields, layerName)
+            sql = 'SELECT ST_Union(ST_Buffer({}, {})) AS {}{} FROM "{}"'.format(geometry, distance, geometry, other_fields, layerName)
         else:
-            sql = "SELECT ST_Buffer({}, {}) AS {}{} FROM '{}'".format(geometry, distance, geometry, other_fields, layerName)
+            sql = 'SELECT ST_Buffer({}, {}) AS {}{} FROM "{}"'.format(geometry, distance, geometry, other_fields, layerName)
 
         if fieldName:
-            sql = '{} GROUP BY {}'.format(sql, fieldName)
+            sql = '{} GROUP BY "{}"'.format(sql, fieldName)
 
         arguments.append(sql)
 

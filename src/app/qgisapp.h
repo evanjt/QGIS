@@ -50,6 +50,7 @@ class QgsComposerManager;
 class QgsContrastEnhancement;
 class QgsCoordinateReferenceSystem;
 class QgsCustomDropHandler;
+class QgsCustomProjectOpenHandler;
 class QgsCustomLayerOrderWidget;
 class QgsDockWidget;
 class QgsDoubleSpinBox;
@@ -97,6 +98,7 @@ class QgsUndoWidget;
 class QgsUserInputWidget;
 class QgsVectorLayer;
 class QgsVectorLayerTools;
+class QgsVectorTileLayer;
 class QgsWelcomePage;
 class QgsOptionsWidgetFactory;
 class QgsStatusBar;
@@ -108,6 +110,8 @@ class QgsUserProfileManagerWidgetFactory;
 class Qgs3DMapCanvasDockWidget;
 class QgsHandleBadLayersHandler;
 class QgsNetworkAccessManager;
+class QgsGpsConnection;
+class QgsApplicationExitBlockerInterface;
 
 class QDomDocument;
 class QNetworkReply;
@@ -119,7 +123,9 @@ class QgsAdvancedDigitizingDockWidget;
 class QgsGpsInformationWidget;
 class QgsStatisticalSummaryDockWidget;
 class QgsMapCanvasTracer;
+class QgsTemporalControllerDockWidget;
 
+class QgsMapDecoration;
 class QgsDecorationItem;
 class QgsMessageLogViewer;
 class QgsMessageBar;
@@ -134,10 +140,14 @@ class QgsDataSourceManagerDialog;
 class QgsBrowserGuiModel;
 class QgsBrowserModel;
 class QgsGeoCmsProviderRegistry;
-class QgsLayoutQptDropHandler;
+class QgsLayoutCustomDropHandler;
 class QgsProxyProgressTask;
 class QgsNetworkRequestParameters;
-
+class QgsBearingNumericFormat;
+class QgsDevToolsPanelWidget;
+class QgsDevToolWidgetFactory;
+class QgsNetworkLogger;
+class QgsNetworkLoggerWidgetFactory;
 #include <QMainWindow>
 #include <QToolBar>
 #include <QAbstractSocket>
@@ -153,13 +163,18 @@ class QgsNetworkRequestParameters;
 #include "qgsrecentprojectsitemsmodel.h"
 #include "qgsraster.h"
 #include "qgsrasterminmaxorigin.h"
+#include "qgslayertreeregistrybridge.h"
 #include "qgsmaplayeractionregistry.h"
 #include "qgsoptionswidgetfactory.h"
 #include "qgsattributetablefiltermodel.h"
 #include "qgsmasterlayoutinterface.h"
+#include "qgsmaptoolselect.h"
 #include "ogr/qgsvectorlayersaveasdialog.h"
 #include "ui_qgisapp.h"
 #include "qgis_app.h"
+#include "qgsvectorlayerref.h"
+#include "devtools/qgsappdevtoolutils.h"
+#include "options/qgsoptionsutils.h"
 
 #include <QGestureEvent>
 #include <QTapAndHoldGesture>
@@ -170,15 +185,18 @@ class QgsNetworkRequestParameters;
 
 class QgsLegendFilterButton;
 
+#ifdef HAVE_GEOREFERENCER
+class QgsGeoreferencerMainWindow;
+#endif
+
 /**
  * \class QgisApp
- * \brief Main window for the Qgis application
+ * \brief Main window for the QGIS application
  */
 class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 {
     Q_OBJECT
   public:
-
     //! Constructor
     QgisApp( QSplashScreen *splash, bool restorePlugins = true,
              bool skipVersionCheck = false, const QString &rootProfileLocation = QString(),
@@ -194,10 +212,9 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Open a raster layer for the given file
-      \returns false if unable to open a raster layer for rasterFile
-      \note
-      This is essentially a simplified version of the above
-      */
+     * \returns false if unable to open a raster layer for rasterFile
+     * \note This is essentially a simplified version of the above
+     */
     QgsRasterLayer *addRasterLayer( const QString &rasterFile, const QString &baseName, bool guiWarning = true );
 
     /**
@@ -237,7 +254,6 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     /**
      * Attempts to run a Python script
      * \param filePath full path to Python script
-     * \since QGIS 2.7
      */
     void runScript( const QString &filePath );
 
@@ -290,7 +306,7 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     //! Returns the messageBar object which allows displaying unobtrusive messages to the user.
     QgsMessageBar *messageBar();
 
-    //! Open the message log dock widget *
+    //! Open the message log dock widget
     void openMessageLog();
 
     //! Adds a widget to the user input tool bar.
@@ -326,14 +342,32 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     /**
      * Add a dock widget to the main window. Overloaded from QMainWindow.
      * After adding the dock widget to the ui (by delegating to the QMainWindow
-     * parent class, it will also add it to the View menu list of docks.*/
+     * parent class, it will also add it to the View menu list of docks.
+    */
     void addDockWidget( Qt::DockWidgetArea area, QDockWidget *dockwidget );
     void removeDockWidget( QDockWidget *dockwidget );
 
     /**
+     * Add a dock widget to the given area and tabify it (if other dock widgets
+     * exist in the same \a area). The new tab will be below other tabs unless
+     * \a raiseTab is passed as true.
+     *
+     * \a tabifyWith is a list of dock widget object names, ordered by
+     * priority, with which the new dock widget should be tabified. Only the
+     * first matching object name will be picked. If none of the given object
+     * names is found in that \a area (or if \a tabifyWith is not given at
+     * all), the new dock widget will be created anyways, but its location
+     * within that \a area will be unpredictable.
+     *
+     * \since QGIS 3.14
+     */
+    void addTabifiedDockWidget( Qt::DockWidgetArea area, QDockWidget *dockWidget, const QStringList &tabifyWith = QStringList(), bool raiseTab = false );
+
+    /**
      * Add a toolbar to the main window. Overloaded from QMainWindow.
      * After adding the toolbar to the ui (by delegating to the QMainWindow
-     * parent class, it will also add it to the View menu list of toolbars.*/
+     * parent class, it will also add it to the View menu list of toolbars.
+    */
     QToolBar *addToolBar( const QString &name );
 
     /**
@@ -347,12 +381,14 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Add window to Window menu. The action title is the window title
-     * and the action should raise, unminimize and activate the window. */
+     * and the action should raise, unminimize and activate the window.
+    */
     void addWindow( QAction *action );
 
     /**
      * Remove window from Window menu. Calling this is necessary only for
-     * windows which are hidden rather than deleted when closed. */
+     * windows which are hidden rather than deleted when closed.
+    */
     void removeWindow( QAction *action );
 
     /**
@@ -479,7 +515,25 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     QAction *actionMapTips() { return mActionMapTips; }
     QAction *actionNewBookmark() { return mActionNewBookmark; }
     QAction *actionShowBookmarks() { return mActionShowBookmarks; }
+    QAction *actionShowBookmarkManager() { return mActionShowBookmarkManager; }
     QAction *actionDraw() { return mActionDraw; }
+    QAction *actionCircle2Points() { return mActionCircle2Points ; }
+    QAction *actionCircle3Points() { return mActionCircle3Points ; }
+    QAction *actionCircle3Tangents() { return mActionCircle3Tangents ; }
+    QAction *actionCircle2TangentsPoint() { return mActionCircle2TangentsPoint ; }
+    QAction *actionCircleCenterPoint() { return mActionCircleCenterPoint ; }
+    QAction *actionEllipseCenter2Points() { return mActionEllipseCenter2Points ; }
+    QAction *actionEllipseCenterPoint() { return mActionEllipseCenterPoint ; }
+    QAction *actionEllipseExtent() { return mActionEllipseExtent ; }
+    QAction *actionEllipseFoci() { return mActionEllipseFoci ; }
+    QAction *actionRectangleCenterPoint() { return mActionRectangleCenterPoint ; }
+    QAction *actionRectangleExtent() { return mActionRectangleExtent ; }
+    QAction *actionRectangle3PointsDistance() { return mActionRectangle3PointsDistance ; }
+    QAction *actionRectangle3PointsProjected() { return mActionRectangle3PointsProjected ; }
+    QAction *actionRegularPolygon2Points() { return mActionRegularPolygon2Points ; }
+    QAction *actionRegularPolygonCenterPoint() { return mActionRegularPolygonCenterPoint ; }
+    QAction *actionRegularPolygonCenterCorner() { return mActionRegularPolygonCenterCorner ; }
+
 
     QAction *actionDataSourceManager() { return mActionDataSourceManager; }
     QAction *actionNewVectorLayer() { return mActionNewVectorLayer; }
@@ -490,6 +544,8 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     QAction *actionAddPgLayer() { return mActionAddPgLayer; }
     QAction *actionAddSpatiaLiteLayer() { return mActionAddSpatiaLiteLayer; }
     QAction *actionAddWmsLayer() { return mActionAddWmsLayer; }
+    QAction *actionAddXyzLayer() { return mActionAddXyzLayer; }
+    QAction *actionAddVectorTileLayer() { return mActionAddVectorTileLayer; }
     QAction *actionAddWcsLayer() { return mActionAddWcsLayer; }
     QAction *actionAddWfsLayer() { return mActionAddWfsLayer; }
     QAction *actionAddAfsLayer() { return mActionAddAfsLayer; }
@@ -523,6 +579,8 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     QAction *actionHideAllLayers() { return mActionHideAllLayers; }
     QAction *actionShowAllLayers() { return mActionShowAllLayers; }
     QAction *actionHideSelectedLayers() { return mActionHideSelectedLayers; }
+    QAction *actionToggleSelectedLayers() { return mActionToggleSelectedLayers; }
+    QAction *actionToggleSelectedLayersIndependently() { return mActionToggleSelectedLayersIndependently; }
     QAction *actionHideDeselectedLayers() { return mActionHideDeselectedLayers; }
     QAction *actionShowSelectedLayers() { return mActionShowSelectedLayers; }
 
@@ -564,6 +622,7 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     QMenu *addLayerMenu() { return mAddLayerMenu; }
     QMenu *settingsMenu() { return mSettingsMenu; }
     QMenu *pluginMenu() { return mPluginMenu; }
+    QMenu *pluginHelpMenu() { return mMenuPluginHelp; }
     QMenu *databaseMenu() { return mDatabaseMenu; }
     QMenu *rasterMenu() { return mRasterMenu; }
     QMenu *vectorMenu() { return mVectorMenu; }
@@ -593,6 +652,12 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     QToolBar *advancedDigitizeToolBar() { return mAdvancedDigitizeToolBar; }
     QToolBar *shapeDigitizeToolBar() { return mShapeDigitizeToolBar; }
     QToolBar *attributesToolBar() { return mAttributesToolBar; }
+
+    /**
+     * Returns selection toolbar
+     * \since QGIS 3.14
+     */
+    QToolBar *selectionToolBar() { return mSelectionToolBar; }
     QToolBar *pluginToolBar() { return mPluginToolBar; }
     QToolBar *helpToolBar() { return mHelpToolBar; }
     QToolBar *rasterToolBar() { return mRasterToolBar; }
@@ -611,7 +676,7 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     QgsLocatorWidget *locatorWidget() { return mLocatorWidget; }
 
     //! show layer properties
-    void showLayerProperties( QgsMapLayer *mapLayer );
+    void showLayerProperties( QgsMapLayer *mapLayer, const QString &page = QString() );
 
     //! returns pointer to map legend
     QgsLayerTreeView *layerTreeView();
@@ -629,7 +694,8 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     /**
      * Returns the vector layers in edit mode
      * \param modified whether to return only layers that have been modified
-     * \returns list of layers in legend order, or empty list */
+     * \returns list of layers in legend order, or empty list
+    */
     QList<QgsMapLayer *> editableLayers( bool modified = false ) const;
 
     //! Gets timeout for timed messages: default of 5 seconds
@@ -640,7 +706,16 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     void emitCustomCrsValidation( QgsCoordinateReferenceSystem &crs );
 
+    /**
+     * Returns a list of active map decorations
+     * \since QGIS 3.14
+     */
+    QList<QgsMapDecoration *> activeDecorations();
+
+    //! Returns a list of registered map decoration items
     QList<QgsDecorationItem *> decorationItems() { return mDecorationItems; }
+
+    //! A a map decoration \a item
     void addDecorationItem( QgsDecorationItem *item ) { mDecorationItems.append( item ); }
 
     //! \since QGIS 2.1
@@ -660,11 +735,59 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     //! Unregister a previously registered tab in the options dialog
     void unregisterOptionsWidgetFactory( QgsOptionsWidgetFactory *factory );
 
+    //! Register a new tab in the project properties dialog
+    void registerProjectPropertiesWidgetFactory( QgsOptionsWidgetFactory *factory );
+
+    //! Unregister a previously registered tab in the project properties dialog
+    void unregisterProjectPropertiesWidgetFactory( QgsOptionsWidgetFactory *factory );
+
+    //! Register a dev tool factory
+    void registerDevToolFactory( QgsDevToolWidgetFactory *factory );
+
+    //! Unregister a previously registered dev tool factory
+    void unregisterDevToolFactory( QgsDevToolWidgetFactory *factory );
+
+    /**
+     * Register a new application exit blocker, which can be used to prevent the QGIS application
+     * from exiting while a plugin or script has unsaved changes.
+     *
+     * \note Ownership of \a blocker is not transferred, and the blocker must
+     *       be unregistered when plugin is unloaded.
+     *
+     * \see unregisterApplicationExitBlocker()
+     */
+    void registerApplicationExitBlocker( QgsApplicationExitBlockerInterface *blocker );
+
+    /**
+     * Unregister a previously registered application exit \a blocker.
+     * \see registerApplicationExitBlocker()
+    */
+    void unregisterApplicationExitBlocker( QgsApplicationExitBlockerInterface *blocker );
+
     //! Register a new custom drop handler.
     void registerCustomDropHandler( QgsCustomDropHandler *handler );
 
     //! Unregister a previously registered custom drop handler.
     void unregisterCustomDropHandler( QgsCustomDropHandler *handler );
+
+    /**
+     * Register a new custom project open \a handler.
+     * \note Ownership of \a handler is not transferred, and the handler must
+     *       be unregistered when plugin is unloaded.
+     * \see QgsCustomProjectOpenHandler
+     * \see unregisterCustomProjectOpenHandler()
+     */
+    void registerCustomProjectOpenHandler( QgsCustomProjectOpenHandler *handler );
+
+    /**
+     * Unregister a previously registered custom project open \a handler.
+     * \see QgsCustomDropHandler
+     * \see registerCustomProjectOpenHandler()
+     */
+    void unregisterCustomProjectOpenHandler( QgsCustomProjectOpenHandler *handler );
+
+    //! Returns a list of registered custom drop handlers.
+    QVector<QPointer<QgsCustomDropHandler >> customDropHandlers() const;
 
     //! Register a new custom layout drop handler.
     void registerCustomLayoutDropHandler( QgsLayoutCustomDropHandler *handler );
@@ -706,6 +829,16 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
      * @param categories an int as a flag value of QgsAppScreenShots::Categories
      */
     void takeAppScreenShots( const QString &saveDirectory, const int categories = 0 );
+
+    QgsLayerTreeRegistryBridge::InsertionPoint layerTreeInsertionPoint() const;
+
+    /**
+     * Sets a GPS \a connection to use within the GPS Panel widget.
+     *
+     * Any existing GPS connection used by the widget will be disconnect and replaced with this connection. The connection
+     * is automatically registered within the QgsApplication::gpsConnectionRegistry().
+     */
+    void setGpsPanelConnection( QgsGpsConnection *connection );
 
   public slots:
     //! save current vector layer
@@ -814,24 +947,25 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     //! cuts selected features on the active layer to the clipboard
 
     /**
-       \param layerContainingSelection  The layer that the selection will be taken from
-                                        (defaults to the active layer on the legend)
+      * \param layerContainingSelection  The layer that the selection will be taken from
+      *                                  (defaults to the active layer on the legend)
      */
     void cutSelectionToClipboard( QgsMapLayer *layerContainingSelection = nullptr );
     //! copies selected features on the active layer to the clipboard
 
     /**
-       \param layerContainingSelection  The layer that the selection will be taken from
-                                        (defaults to the active layer on the legend)
+      * \param layerContainingSelection  The layer that the selection will be taken from
+      *                                  (defaults to the active layer on the legend)
      */
     void copySelectionToClipboard( QgsMapLayer *layerContainingSelection = nullptr );
     //! copies features on the clipboard to the active layer
 
     /**
-       \param destinationLayer  The layer that the clipboard will be pasted to
-                                (defaults to the active layer on the legend)
+      * \param destinationLayer  The layer that the clipboard will be pasted to
+      *                          (defaults to the active layer on the legend)
      */
     void pasteFromClipboard( QgsMapLayer *destinationLayer = nullptr );
+
     //! copies features on the clipboard to a new vector layer
     void pasteAsNewVector();
     //! copies features on the clipboard to a new memory vector layer
@@ -899,12 +1033,14 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Zooms so that the pixels of the raster layer occupies exactly one screen pixel.
-        Only works on raster layers*/
+     * Only works on raster layers.
+    */
     void legendLayerZoomNative();
 
     /**
      * Stretches the raster layer, if stretching is active, based on the min and max of the current extent.
-        Only works on raster layers*/
+     * Only works on raster layers.
+    */
     void legendLayerStretchUsingCurrentExtent();
 
     //! Watch for QFileOpenEvent.
@@ -931,8 +1067,14 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     //! Duplicate map layer(s) in legend
     void duplicateLayers( const QList<QgsMapLayer *> &lyrList = QList<QgsMapLayer *>() );
 
-    //! change layer subset of current vector layer
-    void layerSubsetString();
+    /**
+     * Changes layer subset of \a mapLayer
+     * \since QGIS 3.12
+     */
+    void layerSubsetString( QgsMapLayer *mapLayer );
+
+    //! change layer subset of the active layer
+    void layerSubsetString( );
 
     //! Sets scale visibility of selected layers
     void setLayerScaleVisibility();
@@ -958,8 +1100,8 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     /**
      * Add a raster layer directly without prompting user for location
       The caller must provide information compatible with the provider plugin
-      using the uri and baseName. The provider can use these
-      parameters in any way necessary to initialize the layer. The baseName
+      using the \a uri and \a baseName. The provider can use these
+      parameters in any way necessary to initialize the layer. The \a baseName
       parameter is used in the Map Legend so it should be formed in a meaningful
       way.
       */
@@ -968,8 +1110,8 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     /**
      * Add a vector layer directly without prompting user for location
       The caller must provide information compatible with the provider plugin
-      using the vectorLayerPath and baseName. The provider can use these
-      parameters in any way necessary to initialize the layer. The baseName
+      using the \a vectorLayerPath and \a baseName. The provider can use these
+      parameters in any way necessary to initialize the layer. The \a baseName
       parameter is used in the Map Legend so it should be formed in a meaningful
       way.
       */
@@ -977,9 +1119,22 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Adds a mesh layer directly without prompting user for location
-     * \returns true if successfully added layer
+     * The caller must provide information compatible with the provider plugin
+     * using the \a url and \a baseName. The provider can use these
+     * parameters in any way necessary to initialize the layer. The \a baseName
+     * parameter is used in the Map Legend so it should be formed in a meaningful
+     * way.
      */
     QgsMeshLayer *addMeshLayer( const QString &url, const QString &baseName, const QString &providerKey );
+
+    /**
+     * Adds a vector tile layer directly without prompting user for location
+     * The caller must provide information needed for layer construction
+     * using the \a url and \a baseName. The \a baseName parameter is used
+     * in the Map Legend so it should be formed in a meaningful way.
+     * \since QGIS 3.14
+     */
+    QgsVectorTileLayer *addVectorTileLayer( const QString &url, const QString &baseName );
 
     /**
      * \brief overloaded version of the private addLayer method that takes a list of
@@ -992,10 +1147,10 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Overloaded version of the private addRasterLayer()
-      Method that takes a list of file names instead of prompting
-      user with a dialog.
-      \returns true if successfully added layer(s)
-      */
+     * Method that takes a list of file names instead of prompting
+     * user with a dialog.
+     * \returns true if successfully added layer(s)
+     */
     bool addRasterLayers( const QStringList &layerQStringList, bool guiWarning = true );
 
     //! Open a plugin layer using its provider
@@ -1009,6 +1164,7 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     void updateProjectFromTemplates();
 
     /**
+     *
      * Settings pages section
      */
     //! Gets map of option pages
@@ -1027,7 +1183,8 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Refreshes the state of the layer actions toolbar action
-      * \since QGIS 2.1 */
+     * \since QGIS 2.1
+    */
     void refreshActionFeatureAction();
 
     QMenu *panelMenu() { return mPanelMenu; }
@@ -1066,6 +1223,21 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     //! Create a new file from a template project
     bool fileNewFromTemplate( const QString &fileName );
+
+    //! Show the spatial bookmark manager panel
+    void showBookmarkManager( bool show );
+
+    //! Show and focus the browser panel to spatial bookmarks
+    void showBookmarks();
+
+    //! Create a new spatial bookmark
+    void newBookmark( bool inProject = false );
+
+    /**
+     * Creates a default attribute editor context using the main map canvas and the main edit tools and message bar
+     * \since QGIS 3.12
+     */
+    QgsAttributeEditorContext createAttributeEditorContext();
 
   protected:
 
@@ -1136,13 +1308,15 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     /**
      * Perform a local histogram stretch on the active raster layer
      * (stretch based on pixel values in view extent).
-     * Valid for non wms raster layers only. */
+     * Valid for non wms raster layers only.
+    */
     void localHistogramStretch();
 
     /**
      * Perform a full histogram stretch on the active raster layer
      * (stretch based on pixels values in full dataset)
-     * Valid for non wms raster layers only. */
+     * Valid for non wms raster layers only.
+    */
     void fullHistogramStretch();
     //! Perform a local cumulative cut stretch
     void localCumulativeCutStretch();
@@ -1151,23 +1325,43 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Increase raster brightness
-     * Valid for non wms raster layers only. */
+     * Valid for non wms raster layers only.
+    */
     void increaseBrightness();
 
     /**
      * Decrease raster brightness
-     * Valid for non wms raster layers only. */
+     * Valid for non wms raster layers only.
+    */
     void decreaseBrightness();
 
     /**
      * Increase raster contrast
-     * Valid for non wms raster layers only. */
+     * Valid for non wms raster layers only.
+    */
     void increaseContrast();
 
     /**
      * Decrease raster contrast
-     * Valid for non wms raster layers only. */
+     * Valid for non wms raster layers only.
+    */
     void decreaseContrast();
+
+    /**
+     * Increase raster gamma
+     * Valid for non wms raster layers only.
+     * \since QGIS 3.16
+     */
+    void increaseGamma();
+
+    /**
+     * Decrease raster gamma
+     * Valid for non wms raster layers only.
+     * \since QGIS 3.16
+     */
+    void decreaseGamma();
+
+
     //! plugin manager
     void showPluginManager();
     //! load Python support if possible
@@ -1364,6 +1558,10 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     void showAllLayers();
     //reimplements method from base (gui) class
     void hideSelectedLayers();
+    //! Toggles the visibility of the selected layers depending on the state of the first layer in selection (first clicked)
+    void toggleSelectedLayers();
+    //! Toggles the visibility of the selected layers independently
+    void toggleSelectedLayersIndependently();
     //! Hides any layers which are not selected
     void hideDeselectedLayers();
     //reimplements method from base (gui) class
@@ -1394,10 +1592,6 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     //! Open project properties dialog and show the projections tab
     void projectPropertiesProjections();
     /*  void urlData(); */
-    //! Show the spatial bookmarks dialog
-    void showBookmarks( bool show );
-    //! Create a new spatial bookmark
-    void newBookmark();
     //! activates the add feature tool
     void addFeature();
     //! activates the move feature tool
@@ -1459,6 +1653,9 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     //! deselect features from all layers
     void deselectAll();
 
+    //! deselect features from the current active layer
+    void deselectActiveLayer();
+
     //! select all features
     void selectAll();
 
@@ -1502,7 +1699,8 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Activates or deactivates actions depending on the current maplayer type.
-    Is called from the legend when the current legend item has changed*/
+     * Is called from the legend when the current legend item has changed.
+    */
     void activateDeactivateLayerRelatedActions( QgsMapLayer *layer );
 
     /**
@@ -1515,6 +1713,10 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     void extentChanged();
     void showRotation();
+
+    void showPanMessage( double distance, QgsUnitTypes::DistanceUnit unit, double bearing );
+
+    void selectionModeChanged( QgsMapToolSelect::Mode mode );
 
     void displayMapToolMessage( const QString &message, Qgis::MessageLevel level = Qgis::Info );
     void displayMessage( const QString &title, const QString &message, Qgis::MessageLevel level );
@@ -1578,6 +1780,9 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     //! show Python console
     void showPythonDialog();
+
+    //! add Python cnosole at start up
+    void initPythonConsoleOptions();
 
     //! Shows a warning when an old project file is read.
     void oldProjectVersionWarning( const QString & );
@@ -1648,27 +1853,32 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Disable any preview modes shown on the map canvas
-     * \since QGIS 2.3 */
+     * \since QGIS 2.3
+    */
     void disablePreviewMode();
 
     /**
      * Enable a grayscale preview mode on the map canvas
-     * \since QGIS 2.3 */
+     * \since QGIS 2.3
+    */
     void activateGrayscalePreview();
 
     /**
      * Enable a monochrome preview mode on the map canvas
-     * \since QGIS 2.3 */
+     * \since QGIS 2.3
+    */
     void activateMonoPreview();
 
     /**
      * Enable a color blindness (protanope) preview mode on the map canvas
-     * \since QGIS 2.3 */
+     * \since QGIS 2.3
+    */
     void activateProtanopePreview();
 
     /**
      * Enable a color blindness (deuteranope) preview mode on the map canvas
-     * \since QGIS 2.3 */
+     * \since QGIS 2.3
+    */
     void activateDeuteranopePreview();
 
     void toggleFilterLegendByExpression( bool );
@@ -1687,7 +1897,36 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     //! handle project crs changes
     void projectCrsChanged();
 
+    //! Updates the temporal range in layers that are using project temporal range.
+    void projectTemporalRangeChanged();
+
     void onActiveLayerChanged( QgsMapLayer *layer );
+
+    /**
+     * Triggered when a vector layer style has changed, checks for widget config layer dependencies
+     * \param categories style categories
+     * \since QGIS 3.12
+     */
+    void vectorLayerStyleLoaded( const QgsMapLayer::StyleCategories categories );
+
+    //! Enable or disable event tracing (for debugging)
+    void toggleEventTracing();
+
+    /**
+     * Enables or disables digitizing with curve for map tool that support this capabilities
+     * \since QGIS 3.16
+     */
+    void enableDigitizeWithCurve( bool enable );
+
+    /**
+     * Enables the action that toggles digitizing with curve
+     * \since QGIS 3.16
+     */
+    void enableDigitizeWithCurveAction( bool enable );
+
+#ifdef HAVE_GEOREFERENCER
+    void showGeoreferencer();
+#endif
 
   signals:
 
@@ -1699,32 +1938,33 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Emitted when a key is pressed and we want non widget subclasses to be able
-      to pick up on this (e.g. maplayer) */
+     * to pick up on this (e.g. maplayer).
+    */
     void keyPressed( QKeyEvent *e );
 
     /**
      * Emitted when a project file is successfully read
-      \note
-      This is useful for plug-ins that store properties with project files.  A
-      plug-in can connect to this signal.  When it is emitted, the plug-in
-      knows to then check the project properties for any relevant state.
+     * \note This is useful for plug-ins that store properties with project files.  A
+     * plug-in can connect to this signal.  When it is emitted, the plug-in
+     * knows to then check the project properties for any relevant state.
       */
     void projectRead();
 
     /**
      * Emitted when starting an entirely new project
-      \note
-      This is similar to projectRead(); plug-ins might want to be notified
-      that they're in a new project.  Yes, projectRead() could have been
-      overloaded to be used in the case of new projects instead.  However,
-      it's probably more semantically correct to have an entirely separate
-      signal for when this happens.
-      */
+     * \note
+     * This is similar to projectRead(); plug-ins might want to be notified
+     * that they're in a new project.  Yes, projectRead() could have been
+     * overloaded to be used in the case of new projects instead.  However,
+     * it's probably more semantically correct to have an entirely separate
+     * signal for when this happens.
+     */
     void newProject();
 
     /**
      * Signal emitted when the current theme is changed so plugins
-     * can change there tool button icons. */
+     * can change there tool button icons.
+    */
     void currentThemeChanged( const QString & );
 
     /**
@@ -1758,7 +1998,7 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     /**
      * Emitted when a layer has been saved using save as
-       \since QGIS 2.7
+     * \since QGIS 2.7
      */
     void layerSavedAs( QgsMapLayer *l, const QString &path );
 
@@ -1768,7 +2008,7 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     void activeLayerChanged( QgsMapLayer *layer );
 
   private:
-    void createPreviewImage( const QString &path );
+    void createPreviewImage( const QString &path, const QIcon &overlayIcon = QIcon() );
     void startProfile( const QString &name );
     void endProfile();
     void functionProfile( void ( QgisApp::*fnc )(), QgisApp *instance, const QString &name );
@@ -1796,7 +2036,7 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
      * This method will open a dialog so the user can select OGR sublayers to load,
      * and then returns a list of these layers.
      */
-    QList< QgsMapLayer * > askUserForOGRSublayers( QgsVectorLayer *layer );
+    QList< QgsMapLayer * > askUserForOGRSublayers( QgsVectorLayer *layer, const QStringList &subLayers );
 
     /**
      * Add a raster layer to the map (passed in as a ptr).
@@ -1809,9 +2049,18 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
                                            const QString &providerKey, bool guiWarning,
                                            bool guiUpdate );
 
+    /**
+     * This method will open a dialog so the user can select MDAL mesh sublayers to load,
+     * and then returns a list of these layers. Layers are added to the project in the method.
+     */
+    QList< QgsMapLayer * > askUserForMDALSublayers( QgsMeshLayer *layer );
+
     //! Open a mesh layer - this is the generic function which takes all parameters
     QgsMeshLayer *addMeshLayerPrivate( const QString &uri, const QString &baseName,
                                        const QString &providerKey, bool guiWarning = true );
+
+    //! Open a vector tile layer - this is the generic function which takes all parameters
+    QgsVectorTileLayer *addVectorTileLayerPrivate( const QString &uri, const QString &baseName, bool guiWarning = true );
 
     bool addVectorLayersPrivate( const QStringList &layerQStringList, const QString &enc, const QString &dataSourceType, bool guiWarning = true );
     QgsVectorLayer *addVectorLayerPrivate( const QString &vectorLayerPath, const QString &baseName, const QString &providerKey, bool guiWarning = true );
@@ -1823,8 +2072,9 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
      * instance simultaneously results in data loss.
      *
      * \param savePreviewImage Set to false when the preview image should not be saved. E.g. project load.
+     * \param iconOverlay optional icon to overlay when saving a preview image
      */
-    void saveRecentProjectPath( bool savePreviewImage = true );
+    void saveRecentProjectPath( bool savePreviewImage = true, const QIcon &iconOverlay = QIcon() );
     //! Save recent projects list to settings
     void saveRecentProjects();
     //! Update project menu with the current list of recently accessed projects
@@ -1862,12 +2112,19 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
      */
     bool checkMemoryLayers();
 
+    /**
+     * Checks whether any registered application exit blockers should prevent
+     * the application from exiting.
+     */
+    bool checkExitBlockers();
+
     //! Checks for running tasks dependent on the open project
     bool checkTasksDependOnProject();
 
     /**
      * Helper function to union several geometries together (used in function mergeSelectedFeatures)
-      \returns empty geometry in case of error or if canceled */
+     * \returns empty geometry in case of error or if canceled
+    */
     QgsGeometry unionGeometries( const QgsVectorLayer *vl, QgsFeatureList &featureList, bool &canceled );
 
     //! Deletes all the layout designer windows
@@ -1877,7 +2134,7 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     void setupAtlasMapLayerAction( QgsPrintLayout *layout, bool enableAction );
 
-    void setLayoutAtlasFeature( QgsPrintLayout *layout, QgsMapLayer *layer, const QgsFeature &feat );
+    void setLayoutAtlasFeature( QgsPrintLayout *layout, const QgsFeature &feat );
 
     QString saveAsVectorFileGeneral( QgsVectorLayer *vlayer = nullptr, bool symbologyOption = true, bool onlySelected = false, bool defaultToAddToMap = true );
 
@@ -1941,8 +2198,14 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     //! Do histogram stretch for singleband gray / multiband color rasters
     void histogramStretch( bool visibleAreaOnly = false, QgsRasterMinMaxOrigin::Limits limits = QgsRasterMinMaxOrigin::MinMax );
 
-    //! Apply raster brightness
+    //! Apply raster brightness/contrast
     void adjustBrightnessContrast( int delta, bool updateBrightness = true );
+
+    /**
+     * Apply raster gamma
+     * \since QGIS 3.16
+     */
+    void adjustGamma( double delta );
 
     //! Copy a vector style from a layer to another one, if they have the same geometry type
     void duplicateVectorStyle( QgsVectorLayer *srcLayer, QgsVectorLayer *destLayer );
@@ -1996,6 +2259,39 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     //! Returns the message bar of the datasource manager dialog if it is visible, the canvas's message bar otherwise.
     QgsMessageBar *visibleMessageBar();
+
+    /**
+     * Searches for layer dependencies by querying the form widgets and the
+     * \a vectorLayer itself for broken relations. Style \a categories can be
+     * used to limit the search to one or more of the currently implemented search
+     * categories ("Forms" for the form widgets and "Relations" for layer weak relations).
+     * \return a list of weak references to broken layer dependencies
+     */
+    const QList< QgsVectorLayerRef > findBrokenLayerDependencies( QgsVectorLayer *vectorLayer,
+        QgsMapLayer::StyleCategories categories = QgsMapLayer::StyleCategory::AllStyleCategories ) const;
+
+    /**
+     * Scans the \a vectorLayer for broken dependencies and automatically
+     * try to load the missing layers, users are notified about the operation
+     * result. Style \a categories can be
+     * used to exclude one of the currently implemented search categories
+     * ("Forms" for the form widgets and "Relations" for layer weak relations).
+     */
+    void resolveVectorLayerDependencies( QgsVectorLayer *vectorLayer,
+                                         QgsMapLayer::StyleCategories categories = QgsMapLayer::AllStyleCategories );
+
+    /**
+     * Scans the \a vectorLayer for weak relations and automatically
+     * try to resolve and create the broken relations.
+     */
+    void resolveVectorLayerWeakRelations( QgsVectorLayer *vectorLayer );
+
+    /**
+     * Pastes the \a features to the \a pasteVectorLayer and gives feedback to the user
+     * according to \a invalidGeometryCount and \a nTotalFeatures
+     */
+    void pasteFeatures( QgsVectorLayer *pasteVectorLayer, int invalidGeometriesCount, int nTotalFeatures, QgsFeatureList &features );
+
 
     QgisAppStyleSheet *mStyleSheetBuilder = nullptr;
 
@@ -2227,6 +2523,8 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     QgsBrowserDockWidget *mBrowserWidget = nullptr;
     QgsBrowserDockWidget *mBrowserWidget2 = nullptr;
 
+    QgsTemporalControllerDockWidget *mTemporalControllerWidget = nullptr;
+
     QgsAdvancedDigitizingDockWidget *mAdvancedDigitizingDockWidget = nullptr;
     QgsStatisticalSummaryDockWidget *mStatisticalSummaryDockWidget = nullptr;
     QgsBookmarks *mBookMarksDockWidget = nullptr;
@@ -2243,6 +2541,8 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     QgsUserProfileManager *mUserProfileManager = nullptr;
     QgsDockWidget *mMapStylingDock = nullptr;
     QgsLayerStylingWidget *mMapStyleWidget = nullptr;
+    QgsDockWidget *mDevToolsDock = nullptr;
+    QgsDevToolsPanelWidget *mDevToolsWidget = nullptr;
 
     //! Persistent tile scale slider
     QgsTileScaleWidget *mpTileScaleWidget = nullptr;
@@ -2262,7 +2562,7 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     bool cmpByText( QAction *a, QAction *b );
 
     //! the user has trusted the project macros
-    bool mTrustedMacros = false;
+    bool mPythonMacrosEnabled = false;
 
     //! a bar to display warnings in a non-blocker manner
     QgsMessageBar *mInfoBar = nullptr;
@@ -2283,13 +2583,24 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     QgsSnappingUtils *mSnappingUtils = nullptr;
 
+#ifdef HAVE_GEOREFERENCER
+    QgsGeoreferencerMainWindow *mGeoreferencer = nullptr;
+#endif
+
     QList<QgsMapLayerConfigWidgetFactory *> mMapLayerPanelFactories;
     QList<QPointer<QgsOptionsWidgetFactory>> mOptionsWidgetFactories;
+    QList<QPointer<QgsOptionsWidgetFactory>> mProjectPropertiesWidgetFactories;
+
+    QList<QgsDevToolWidgetFactory * > mDevToolFactories;
+
+    QList<QgsApplicationExitBlockerInterface * > mApplicationExitBlockers;
 
     QVector<QPointer<QgsCustomDropHandler>> mCustomDropHandlers;
+    QVector<QPointer<QgsCustomProjectOpenHandler>> mCustomProjectOpenHandlers;
     QVector<QPointer<QgsLayoutCustomDropHandler>> mCustomLayoutDropHandlers;
 
-    QgsLayoutQptDropHandler *mLayoutQptDropHandler = nullptr;
+    QgsLayoutCustomDropHandler *mLayoutQptDropHandler = nullptr;
+    QgsLayoutCustomDropHandler *mLayoutImageDropHandler = nullptr;
 
     QDateTime mProjectLastModified;
 
@@ -2312,7 +2623,7 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
 
     QgsStatusBar *mStatusBar = nullptr;
 
-    QTime mLastRenderTime;
+    QElapsedTimer mLastRenderTime;
     double mLastRenderTimeSeconds = 0;
     QTimer mRenderProgressBarTimer;
     QMetaObject::Connection mRenderProgressBarTimerConnection;
@@ -2329,10 +2640,22 @@ class APP_EXPORT QgisApp : public QMainWindow, private Ui::MainWindow
     //! True if we are blocking the activeLayerChanged signal from being emitted
     bool mBlockActiveLayerChanged = false;
 
+    int mBlockBrowser1Refresh = 0;
+    int mBlockBrowser2Refresh = 0;
+    int mDataSourceManagerRefresh = 0;
+
     std::unique_ptr<QgsGeometryValidationService> mGeometryValidationService;
     QgsGeometryValidationModel *mGeometryValidationModel = nullptr;
     QgsGeometryValidationDock *mGeometryValidationDock = nullptr;
     QgsHandleBadLayersHandler *mAppBadLayersHandler = nullptr;
+
+    std::unique_ptr< QgsBearingNumericFormat > mBearingNumericFormat;
+
+    QgsNetworkLogger *mNetworkLogger = nullptr;
+    QgsScopedDevToolWidgetFactory mNetworkLoggerWidgetFactory;
+    QgsScopedDevToolWidgetFactory mStartupProfilerWidgetFactory;
+
+    QgsScopedOptionsWidgetFactory mCodeEditorWidgetFactory;
 
     class QgsCanvasRefreshBlocker
     {

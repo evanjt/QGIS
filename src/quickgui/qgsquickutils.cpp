@@ -26,6 +26,7 @@
 #include "qgsfeature.h"
 #include "qgsapplication.h"
 #include "qgsvaluerelationfieldformatter.h"
+#include "qgsdatetimefieldformatter.h"
 
 #include "qgsquickfeaturelayerpair.h"
 #include "qgsquickmapsettings.h"
@@ -166,7 +167,7 @@ const QUrl QgsQuickUtils::getEditorComponentSource( const QString &widgetName )
   }
   else
   {
-    return QUrl( path.arg( QStringLiteral( "textedit" ) ) );
+    return QUrl( path.arg( QLatin1String( "textedit" ) ) );
   }
 }
 
@@ -373,6 +374,39 @@ QString QgsQuickUtils::evaluateExpression( const QgsQuickFeatureLayerPair &pair,
   context.setFeature( pair.feature() );
   QgsExpression expr( expression );
   return expr.evaluate( &context ).toString();
+}
+
+void QgsQuickUtils::selectFeaturesInLayer( QgsVectorLayer *layer, const QList<int> &fids, QgsVectorLayer::SelectBehavior behavior )
+{
+  QgsFeatureIds qgsFids;
+  for ( const int &fid : fids )
+    qgsFids << fid;
+  layer->selectByIds( qgsFids, behavior );
+}
+
+QString QgsQuickUtils::fieldType( const QgsField &field )
+{
+  return QVariant( field.type() ).typeName();
+}
+
+QString QgsQuickUtils::dateTimeFieldFormat( const QString &fieldFormat )
+{
+  if ( QgsDateTimeFieldFormatter::DATE_FORMAT == fieldFormat )
+  {
+    return QString( "Date" );
+  }
+  else if ( QgsDateTimeFieldFormatter::TIME_FORMAT == fieldFormat )
+  {
+    return QString( "Time" );
+  }
+  else if ( QgsDateTimeFieldFormatter::DATETIME_FORMAT == fieldFormat )
+  {
+    return QString( "Date Time" );
+  }
+  else
+  {
+    return QString( "Date Time" );
+  }
 }
 
 qreal QgsQuickUtils::screenDensity() const

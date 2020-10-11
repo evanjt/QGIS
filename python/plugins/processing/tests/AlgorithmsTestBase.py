@@ -21,7 +21,6 @@ __author__ = 'Matthias Kuhn'
 __date__ = 'January 2016'
 __copyright__ = '(C) 2016, Matthias Kuhn'
 
-
 import qgis  # NOQA switch sip api
 
 import os
@@ -113,7 +112,7 @@ class AlgorithmsTest(object):
                 parameters[k] = p
 
         for r, p in list(defs['results'].items()):
-            if not 'in_place_result' in p or not p['in_place_result']:
+            if 'in_place_result' not in p or not p['in_place_result']:
                 parameters[r] = self.load_result_param(p)
 
         expectFailure = False
@@ -178,7 +177,7 @@ class AlgorithmsTest(object):
             elif param['type'] == 'interpolation':
                 prefix = processingTestDataPath()
                 tmp = ''
-                for r in param['name'].split(';'):
+                for r in param['name'].split('::|::'):
                     v = r.split('::~::')
                     tmp += '{}::~::{}::~::{}::~::{};'.format(os.path.join(prefix, v[0]),
                                                              v[1], v[2], v[3])
@@ -368,7 +367,6 @@ class AlgorithmsTest(object):
 
 
 class GenericAlgorithmsTest(unittest.TestCase):
-
     """
     General (non-provider specific) algorithm tests
     """

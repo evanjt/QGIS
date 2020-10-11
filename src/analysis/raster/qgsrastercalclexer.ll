@@ -62,6 +62,9 @@ raster_band_ref_quoted  \"(\\.|[^"])*\"
 "atan" { rasterlval.op = QgsRasterCalcNode::opATAN; return FUNCTION;}
 "ln" { rasterlval.op = QgsRasterCalcNode::opLOG; return FUNCTION;}
 "log10" { rasterlval.op = QgsRasterCalcNode::opLOG10; return FUNCTION;}
+"abs" { rasterlval.op = QgsRasterCalcNode::opABS; return FUNCTION;}
+"min" { rasterlval.op = QgsRasterCalcNode::opMIN; return FUNCTION_2_ARGS;}
+"max" { rasterlval.op = QgsRasterCalcNode::opMAX; return FUNCTION_2_ARGS;}
 
 "AND" { return AND; }
 "OR" { return OR; }

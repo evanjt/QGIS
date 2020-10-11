@@ -39,12 +39,10 @@ QgsTemplateProjectsModel::QgsTemplateProjectsModel( QObject *parent )
   for ( const QString &templatePath : paths )
   {
     const QString path = templatePath + QDir::separator() + QStringLiteral( "project_templates" );
-    scanDirectory( path );
-    mFileSystemWatcher.addPath( path );
+    addTemplateDirectory( path );
   }
 
-  scanDirectory( templateDirName );
-  mFileSystemWatcher.addPath( templateDirName );
+  addTemplateDirectory( templateDirName );
 
   connect( &mFileSystemWatcher, &QFileSystemWatcher::directoryChanged, this, &QgsTemplateProjectsModel::scanDirectory );
 
@@ -53,8 +51,8 @@ QgsTemplateProjectsModel::QgsTemplateProjectsModel( QObject *parent )
   QStandardItem *emptyProjectItem = new QStandardItem();
 
   emptyProjectItem->setData( tr( "New Empty Project" ), QgsProjectListItemDelegate::TitleRole );
-  connect( QgsProject::instance(), &QgsProject::crsChanged, this, [emptyProjectItem]() { emptyProjectItem->setData( QgsProject::instance()->crs().description(), QgsProjectListItemDelegate::CrsRole ); } );
-  emptyProjectItem->setData( QgsProject::instance()->crs().description(), QgsProjectListItemDelegate::CrsRole );
+  connect( QgsProject::instance(), &QgsProject::crsChanged, this, [emptyProjectItem]() { emptyProjectItem->setData( QgsProject::instance()->crs().userFriendlyIdentifier(), QgsProjectListItemDelegate::CrsRole ); } );
+  emptyProjectItem->setData( QgsProject::instance()->crs().userFriendlyIdentifier(), QgsProjectListItemDelegate::CrsRole );
   emptyProjectItem->setFlags( Qt::ItemFlag::ItemIsSelectable | Qt::ItemFlag::ItemIsEnabled ) ;
   QSize previewSize( 250, 177 );
   QImage image( previewSize, QImage::Format_ARGB32 );
@@ -75,6 +73,15 @@ QgsTemplateProjectsModel::QgsTemplateProjectsModel( QObject *parent )
   emptyProjectItem->setData( previewImage.pixmap(), Qt::DecorationRole );
 
   appendRow( emptyProjectItem );
+}
+
+void QgsTemplateProjectsModel::addTemplateDirectory( const QString &path )
+{
+  if ( QDir().exists( path ) )
+  {
+    scanDirectory( path );
+    mFileSystemWatcher.addPath( path );
+  }
 }
 
 void QgsTemplateProjectsModel::scanDirectory( const QString &path )

@@ -21,7 +21,7 @@
 #include "qgsdatasourceuri.h"
 #include "qgswfscapabilities.h"
 
-class QgsWfsRootItem : public QgsDataCollectionItem
+class QgsWfsRootItem : public QgsConnectionsRootItem
 {
     Q_OBJECT
   public:
@@ -55,7 +55,11 @@ class QgsWfsConnectionItem : public QgsDataCollectionItem
   private:
     QString mUri;
 
-    QgsWfsCapabilities *mWfsCapabilities = nullptr;
+    QVector<QgsDataItem *> createChildrenOapif();
+
+    // QgsDataItem interface
+  public:
+    bool layerCollection() const override;
 };
 
 
@@ -64,7 +68,7 @@ class QgsWfsLayerItem : public QgsLayerItem
     Q_OBJECT
 
   public:
-    QgsWfsLayerItem( QgsDataItem *parent, QString name, const QgsDataSourceUri &uri, QString featureType, QString title, QString crsString );
+    QgsWfsLayerItem( QgsDataItem *parent, QString name, const QgsDataSourceUri &uri, QString featureType, QString title, QString crsString, const QString &providerKey );
 
     QList<QMenu *> menus( QWidget *parent ) override;
 
@@ -90,7 +94,7 @@ class QgsWfsDataItemProvider : public QgsDataItemProvider
 {
   public:
     QString name() override;
-
+    QString dataProviderKey() const override;
     int capabilities() const override;
 
     QgsDataItem *createDataItem( const QString &path, QgsDataItem *parentItem ) override;

@@ -106,6 +106,10 @@ QgsFcgiServerRequest::QgsFcgiServerRequest()
     {
       method = HeadMethod;
     }
+    else if ( strcmp( me, "PATCH" ) == 0 )
+    {
+      method = PatchMethod;
+    }
   }
 
   if ( method == PostMethod || method == PutMethod )
@@ -206,7 +210,8 @@ void QgsFcgiServerRequest::printRequestInfos( const QUrl &url )
     QStringLiteral( "HTTP_PROXY" ),
     QStringLiteral( "NO_PROXY" ),
     QStringLiteral( "HTTP_AUTHORIZATION" ),
-    QStringLiteral( "QGIS_PROJECT_FILE" )
+    QStringLiteral( "QGIS_PROJECT_FILE" ),
+    QStringLiteral( "QGIS_SERVER_IGNORE_BAD_LAYERS" )
   };
 
   QgsMessageLog::logMessage( QStringLiteral( "Request URL: %2" ).arg( url.url() ), QStringLiteral( "Server" ), Qgis::Info );

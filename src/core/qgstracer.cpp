@@ -278,18 +278,17 @@ int point2vertex( const QgsTracerGraph &g, const QgsPointXY &pt, double epsilon 
 
 int point2edge( const QgsTracerGraph &g, const QgsPointXY &pt, int &lineVertexAfter, double epsilon = 1e-6 )
 {
-  int vertexAfter;
-
   for ( int i = 0; i < g.e.count(); ++i )
   {
     if ( g.inactiveEdges.contains( i ) )
       continue;  // ignore temporarily disabled edges
 
     const QgsTracerGraph::E &e = g.e.at( i );
+    int vertexAfter = -1;
     double dist = closestSegment( e.coords, pt, vertexAfter, epsilon );
     if ( dist == 0 )
     {
-      lineVertexAfter = vertexAfter; //NOLINT
+      lineVertexAfter = vertexAfter;
       return i;
     }
   }
@@ -484,7 +483,7 @@ bool QgsTracer::initGraph()
 
   // TODO: use QgsPointLocator as a source for the linework
 
-  QTime t1, t2, t2a, t3;
+  QElapsedTimer t1, t2, t2a, t3;
 
   t1.start();
   int featuresCounted = 0;
@@ -745,7 +744,7 @@ QVector<QgsPointXY> QgsTracer::findShortestPath( const QgsPointXY &p1, const Qgs
     return QVector<QgsPointXY>();
   }
 
-  QTime t;
+  QElapsedTimer t;
   t.start();
   int v1 = pointInGraph( *mGraph, p1 );
   int v2 = pointInGraph( *mGraph, p2 );
@@ -762,7 +761,7 @@ QVector<QgsPointXY> QgsTracer::findShortestPath( const QgsPointXY &p1, const Qgs
     return QVector<QgsPointXY>();
   }
 
-  QTime t2;
+  QElapsedTimer t2;
   t2.start();
   QgsPolylineXY points = shortestPath( *mGraph, v1, v2 );
   int tPath = t2.elapsed();

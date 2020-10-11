@@ -71,7 +71,7 @@ class QgsAmsProvider : public QgsRasterDataProvider
     static const QString AMS_PROVIDER_KEY;
     static const QString AMS_PROVIDER_DESCRIPTION;
 
-    QgsAmsProvider( const QString &uri, const QgsDataProvider::ProviderOptions &providerOptions );
+    QgsAmsProvider( const QString &uri, const QgsDataProvider::ProviderOptions &providerOptions, QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
     explicit QgsAmsProvider( const QgsAmsProvider &other, const QgsDataProvider::ProviderOptions &providerOptions );
     QgsRasterDataProvider::ProviderCapabilities providerCapabilities() const override;
@@ -85,13 +85,12 @@ class QgsAmsProvider : public QgsRasterDataProvider
     QStringList subLayerStyles() const override;
     void setLayerOrder( const QStringList &layers ) override;
     void setSubLayerVisibility( const QString &name, bool vis ) override;
-    void reloadData() override;
     bool renderInPreview( const QgsDataProvider::PreviewContext &context ) override;
     QgsLayerMetadata layerMetadata() const override;
 
     /* Inherited from QgsRasterInterface */
     int bandCount() const override { return 1; }
-    int capabilities() const override { return Identify | IdentifyText | IdentifyFeature; }
+    int capabilities() const override { return Identify | IdentifyText | IdentifyFeature | Prefetch; }
 
     /* Inherited from QgsRasterDataProvider */
     QgsRectangle extent() const override { return mExtent; }
@@ -99,7 +98,7 @@ class QgsAmsProvider : public QgsRasterDataProvider
     QString lastError() override { return mError; }
     Qgis::DataType dataType( int /*bandNo*/ ) const override { return Qgis::ARGB32; }
     Qgis::DataType sourceDataType( int /*bandNo*/ ) const override { return Qgis::ARGB32; }
-    QgsRasterInterface *clone() const override;
+    QgsAmsProvider *clone() const override;
     QString htmlMetadata() override;
     bool supportsLegendGraphic() const override { return true; }
     QImage getLegendGraphic( double scale = 0, bool forceRefresh = false, const QgsRectangle *visibleExtent = nullptr ) override;
@@ -158,6 +157,11 @@ class QgsAmsProvider : public QgsRasterDataProvider
     int mMaxImageHeight = 4096;
     QgsLayerMetadata mLayerMetadata;
     QList< double > mResolutions;
+
+    /**
+     * Resets cached image
+    */
+    void reloadProviderData() override;
 };
 
 //! Handler for tiled MapServer requests, the data are written to the given image
@@ -217,8 +221,9 @@ class QgsAmsProviderMetadata: public QgsProviderMetadata
   public:
     QgsAmsProviderMetadata();
     QList<QgsDataItemProvider *> dataItemProviders() const override;
-    QgsAmsProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options ) override;
+    QgsAmsProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options, QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() ) override;
     QVariantMap decodeUri( const QString &uri ) override;
+    QString encodeUri( const QVariantMap &parts ) override;
 };
 
 #endif // QGSMAPSERVERPROVIDER_H

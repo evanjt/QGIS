@@ -19,28 +19,28 @@
 #include "qgsmimedatautils.h"
 #include "qgis_gui.h"
 
+class QgsMapCanvas;
+
 /**
  * \ingroup gui
  * Abstract base class that may be implemented to handle new types of data to be dropped in QGIS.
  *
  * Implementations have three approaches they can use to handle drops.
  *
- * 1. The simplest approach is to implement handeFileDrop() when they need to handle
- * dropped files (i.e. with mime type "text/uri-list").
- *
- * 2. Reimplement handleCustomUriDrop() when they want to handle dropped custom
- * QgsMimeDataUtils::Uri entries, for instance handling dropping custom entries
- * from the browser tree (with mime type "application/x-vnd.qgis.qgis.uri"). In
- * this case the implementation's customUriProviderKey() must match the uri
- * entry's providerKey.
- *
- * 3. Reimplement handleMimeData() to directly handle dropped QMimeData.
- * Subclasses should take care when overriding this method. When a drop event
- * occurs, Qt will lock the source application of the drag for the duration
- * of the drop event handling via handleMimeData() (e.g. dragging files from
- * explorer to QGIS will lock the explorer window until the drop handling has
- * been complete). Accordingly handleMimeData() implementations must return
- * quickly and defer any intensive or slow processing.
+ * # The simplest approach is to implement handeFileDrop() when they need to handle
+ *   dropped files (i.e. with mime type "text/uri-list").
+ * # Reimplement handleCustomUriDrop() when they want to handle dropped custom
+ *   QgsMimeDataUtils::Uri entries, for instance handling dropping custom entries
+ *   from the browser tree (with mime type "application/x-vnd.qgis.qgis.uri"). In
+ *   this case the implementation's customUriProviderKey() must match the uri
+ *   entry's providerKey.
+ * # Reimplement handleMimeData() to directly handle dropped QMimeData.
+ *   Subclasses should take care when overriding this method. When a drop event
+ *   occurs, Qt will lock the source application of the drag for the duration
+ *   of the drop event handling via handleMimeData() (e.g. dragging files from
+ *   explorer to QGIS will lock the explorer window until the drop handling has
+ *   been complete). Accordingly handleMimeData() implementations must return
+ *   quickly and defer any intensive or slow processing.
  *
  * \since QGIS 3.0
  */
@@ -98,7 +98,7 @@ class GUI_EXPORT QgsCustomDropHandler : public QObject
      * (For instance by copying the relevant parts of \a data and then handling
      * the data after a short timeout).
      *
-     * \deprecated in QGIS 3.10 - use handleMimeDataV2() instead.
+     * \deprecated since QGIS 3.10 - use handleMimeDataV2() instead.
      */
     Q_DECL_DEPRECATED virtual void handleMimeData( const QMimeData *data ) SIP_DEPRECATED;
 
@@ -135,6 +135,45 @@ class GUI_EXPORT QgsCustomDropHandler : public QObject
      * quickly do not apply.
      */
     virtual bool handleFileDrop( const QString &file );
+
+    /**
+     * Returns TRUE if the handler is capable of handling the provided mime \a uri
+     * when dropped onto a map \a canvas.
+     *
+     * The base class implementation returns FALSE regardless of mime data.
+     *
+     * This method is called when mime data is dragged over a map canvas, in order
+     * to determine whether any handlers are capable of handling the data and to
+     * determine whether the drag action should be accepted.
+     *
+     * \warning Subclasses should be very careful about implementing this. If they
+     * incorrectly return TRUE to a \a uri, it will prevent the default application
+     * drop handling from occurring and will break the ability to drag and drop layers
+     * and files onto QGIS.
+     *
+     * \since QGIS 3.10
+     */
+    virtual bool canHandleCustomUriCanvasDrop( const QgsMimeDataUtils::Uri &uri, QgsMapCanvas *canvas );
+
+    /**
+     * Called from QGIS after a drop event with custom \a uri known by the handler occurs
+     * onto a map \a canvas.
+     *
+     * In order for handleCustomUriCanvasDrop() to be called, subclasses must
+     * also implement customUriProviderKey() to indicate the providerKey
+     * value which the handler accepts.
+     *
+     * If the function returns TRUE, it means the handler has accepted the drop
+     * and it should not be further processed (e.g. by other QgsCustomDropHandlers).
+     *
+     * Subclasses which implement this must also implement corresponding versions of
+     * canHandleCustomUriCanvasDrop().
+     *
+     * \see customUriProviderKey()
+     * \see canHandleCustomUriCanvasDrop()
+     * \since QGIS 3.10
+     */
+    virtual bool handleCustomUriCanvasDrop( const QgsMimeDataUtils::Uri &uri, QgsMapCanvas *canvas ) const;
 };
 
 #endif // QGSCUSTOMDROPHANDLER_H

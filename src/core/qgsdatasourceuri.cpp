@@ -25,6 +25,7 @@
 #include <QStringList>
 #include <QRegExp>
 #include <QUrl>
+#include <QUrlQuery>
 
 QgsDataSourceUri::QgsDataSourceUri()
 {
@@ -57,7 +58,7 @@ QgsDataSourceUri::QgsDataSourceUri( const QString &u )
 
     if ( i == uri.length() || uri[i] != '=' )
     {
-      QgsDebugMsg( QStringLiteral( "= expected after parameter name, skipping text '%1'" ).arg( pname ) );
+      // no "=", so likely not a parameter name
       continue;
     }
 
@@ -85,7 +86,6 @@ QgsDataSourceUri::QgsDataSourceUri( const QString &u )
         }
         else
         {
-          mSchema.clear();
           mTable = pval;
         }
 
@@ -93,7 +93,7 @@ QgsDataSourceUri::QgsDataSourceUri( const QString &u )
         {
           i++;
 
-          int start = i;
+          start = i;
           while ( i < uri.length() && uri[i] != ')' )
           {
             if ( uri[i] == '\\' )
@@ -116,6 +116,10 @@ QgsDataSourceUri::QgsDataSourceUri( const QString &u )
         {
           mGeometryColumn = QString();
         }
+      }
+      else if ( pname == QLatin1String( "schema" ) )
+      {
+        mSchema = pval;
       }
       else if ( pname == QLatin1String( "key" ) )
       {
@@ -155,7 +159,7 @@ QgsDataSourceUri::QgsDataSourceUri( const QString &u )
       }
       else if ( pname == QLatin1String( "connect_timeout" ) )
       {
-        QgsDebugMsg( QStringLiteral( "connection timeout ignored" ) );
+        QgsDebugMsgLevel( QStringLiteral( "connection timeout ignored" ), 3 );
       }
       else if ( pname == QLatin1String( "dbname" ) )
       {
@@ -528,7 +532,7 @@ QString QgsDataSourceUri::connectionInfo( bool expandAuthConfig ) const
     }
   }
 
-  return connectionItems.join( QStringLiteral( " " ) );
+  return connectionItems.join( QLatin1Char( ' ' ) );
 }
 
 QString QgsDataSourceUri::uri( bool expandAuthConfig ) const
@@ -542,7 +546,7 @@ QString QgsDataSourceUri::uri( bool expandAuthConfig ) const
 
   if ( mUseEstimatedMetadata )
   {
-    uri += QStringLiteral( " estimatedmetadata=true" );
+    uri += QLatin1String( " estimatedmetadata=true" );
   }
 
   if ( !mSrid.isEmpty() )
@@ -558,7 +562,7 @@ QString QgsDataSourceUri::uri( bool expandAuthConfig ) const
 
   if ( mSelectAtIdDisabled )
   {
-    uri += QStringLiteral( " selectatid=false" );
+    uri += QLatin1String( " selectatid=false" );
   }
 
   for ( QMap<QString, QString>::const_iterator it = mParams.begin(); it != mParams.end(); ++it )
@@ -576,34 +580,75 @@ QString QgsDataSourceUri::uri( bool expandAuthConfig ) const
   columnName.replace( '\\', QLatin1String( "\\\\" ) );
   columnName.replace( ')', QLatin1String( "\\)" ) );
 
-  uri += QStringLiteral( " table=%1%2 sql=%3" )
-         .arg( quotedTablename(),
-               mGeometryColumn.isNull() ? QString() : QStringLiteral( " (%1)" ).arg( columnName ),
-               mSql );
+  if ( !mTable.isEmpty() )
+  {
+    uri += QStringLiteral( " table=%1%2" )
+           .arg( quotedTablename(),
+                 mGeometryColumn.isNull() ? QString() : QStringLiteral( " (%1)" ).arg( columnName ) );
+  }
+  else if ( !mSchema.isEmpty() )
+  {
+    uri += QStringLiteral( " schema='%1'" ).arg( escape( mSchema ) );
+  }
+
+  if ( !mSql.isEmpty() )
+  {
+    uri += QStringLiteral( " sql=" ) + mSql;
+  }
 
   return uri;
 }
 
+// from qurl.h
+QByteArray toLatin1_helper( const QString &string )
+{
+  if ( string.isEmpty() )
+    return string.isNull() ? QByteArray() : QByteArray( "" );
+  return string.toLatin1();
+}
+
 QByteArray QgsDataSourceUri::encodedUri() const
 {
-  QUrl url;
+  QUrlQuery url;
   for ( auto it = mParams.constBegin(); it != mParams.constEnd(); ++it )
   {
     url.addQueryItem( it.key(), it.value() );
   }
-  return url.encodedQuery();
+
+  if ( !mUsername.isEmpty() )
+    url.addQueryItem( QStringLiteral( "username" ), mUsername );
+
+  if ( !mPassword.isEmpty() )
+    url.addQueryItem( QStringLiteral( "password" ), mPassword );
+
+  if ( !mAuthConfigId.isEmpty() )
+    url.addQueryItem( QStringLiteral( "authcfg" ), mAuthConfigId );
+
+  return toLatin1_helper( url.toString( QUrl::FullyEncoded ) );
 }
 
 void QgsDataSourceUri::setEncodedUri( const QByteArray &uri )
 {
   mParams.clear();
-  QUrl url;
-  url.setEncodedQuery( uri );
+  mUsername.clear();
+  mPassword.clear();
+  mAuthConfigId.clear();
 
-  const auto constQueryItems = url.queryItems();
+  QUrl url;
+  url.setQuery( QString::fromLatin1( uri ) );
+  const QUrlQuery query( url );
+
+  const auto constQueryItems = query.queryItems();
   for ( const QPair<QString, QString> &item : constQueryItems )
   {
-    mParams.insertMulti( item.first, item.second );
+    if ( item.first == QLatin1String( "username" ) )
+      mUsername = item.second;
+    else if ( item.first == QLatin1String( "password" ) )
+      mPassword = item.second;
+    else if ( item.first == QLatin1String( "authcfg" ) )
+      mAuthConfigId = item.second;
+    else
+      mParams.insert( item.first, item.second );
   }
 }
 
@@ -732,35 +777,84 @@ QString QgsDataSourceUri::encodeSslMode( QgsDataSourceUri::SslMode sslMode )
 
 void QgsDataSourceUri::setParam( const QString &key, const QString &value )
 {
-  // may be multiple
-  mParams.insertMulti( key, value );
+  // maintain old API
+  if ( key == QLatin1String( "username" ) )
+    mUsername = value;
+  else if ( key == QLatin1String( "password" ) )
+    mPassword = value;
+  else if ( key == QLatin1String( "authcfg" ) )
+    mAuthConfigId = value;
+  else
+  {
+    // may be multiple
+    mParams.insert( key, value );
+  }
 }
 
 void QgsDataSourceUri::setParam( const QString &key, const QStringList &value )
 {
-  const auto constValue = value;
-  for ( const QString &val : constValue )
+  for ( const QString &val : value )
   {
-    mParams.insertMulti( key, val );
+    setParam( key, val );
   }
 }
 
 int QgsDataSourceUri::removeParam( const QString &key )
 {
+  if ( key == QLatin1String( "username" ) && !mUsername.isEmpty() )
+  {
+    mUsername.clear();
+    return 1;
+  }
+  else if ( key == QLatin1String( "password" ) && !mPassword.isEmpty() )
+  {
+    mPassword.clear();
+    return 1;
+  }
+  else if ( key == QLatin1String( "authcfg" ) && !mAuthConfigId.isEmpty() )
+  {
+    mAuthConfigId.clear();
+    return 1;
+  }
+
   return mParams.remove( key );
 }
 
 QString QgsDataSourceUri::param( const QString &key ) const
 {
+  // maintain old api
+  if ( key == QLatin1String( "username" ) && !mUsername.isEmpty() )
+    return mUsername;
+  else if ( key == QLatin1String( "password" ) && !mPassword.isEmpty() )
+    return mPassword;
+  else if ( key == QLatin1String( "authcfg" ) && !mAuthConfigId.isEmpty() )
+    return mAuthConfigId;
+
   return mParams.value( key );
 }
 
 QStringList QgsDataSourceUri::params( const QString &key ) const
 {
+  // maintain old api
+  if ( key == QLatin1String( "username" ) && !mUsername.isEmpty() )
+    return QStringList() << mUsername;
+  else if ( key == QLatin1String( "password" ) && !mPassword.isEmpty() )
+    return QStringList() << mPassword;
+  else if ( key == QLatin1String( "authcfg" ) && !mAuthConfigId.isEmpty() )
+    return QStringList() << mAuthConfigId;
+
   return mParams.values( key );
 }
 
 bool QgsDataSourceUri::hasParam( const QString &key ) const
 {
+  // maintain old api
+  if ( key == QLatin1String( "username" ) && !mUsername.isEmpty() )
+    return true;
+  else if ( key == QLatin1String( "password" ) && !mPassword.isEmpty() )
+    return true;
+  else if ( key == QLatin1String( "authcfg" ) && !mAuthConfigId.isEmpty() )
+    return true;
+
   return mParams.contains( key );
 }

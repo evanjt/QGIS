@@ -26,6 +26,7 @@ ComboBox {
   id: comboBox
 
   property var comboStyle
+  signal itemClicked( var index )
   anchors { left: parent.left; right: parent.right }
 
   MouseArea {
@@ -44,11 +45,12 @@ ComboBox {
   delegate: ItemDelegate {
     width: comboBox.width
     height: comboBox.height * 0.8
-    text: modelData
+    text: model.display
     font.weight: comboBox.currentIndex === index ? Font.DemiBold : Font.Normal
     font.pixelSize: comboStyle.fontPixelSize
-    highlighted: comboBox.highlightedIndex == index
+    highlighted: comboBox.highlightedIndex === index
     leftPadding: 5 * QgsQuick.Utils.dp
+    onClicked: comboBox.itemClicked( model.EmitableIndex ? model.EmitableIndex : index )
   }
 
   contentItem: Text {

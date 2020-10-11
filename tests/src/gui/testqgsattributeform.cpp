@@ -29,6 +29,7 @@
 #include "qgsgui.h"
 #include "qgsattributeformeditorwidget.h"
 #include "qgsattributeforminterface.h"
+#include "qgsmultiedittoolbutton.h"
 
 class TestQgsAttributeForm : public QObject
 {
@@ -49,9 +50,12 @@ class TestQgsAttributeForm : public QObject
     void testConstraintsOnJoinedFields();
     void testEditableJoin();
     void testUpsertOnEdit();
+    void testFixAttributeForm();
     void testAttributeFormInterface();
     void testDefaultValueUpdate();
     void testDefaultValueUpdateRecursion();
+    void testSameFieldSync();
+    void testZeroDoubles();
 
   private:
     QLabel *constraintsLabel( QgsAttributeForm *form, QgsEditorWidgetWrapper *ww )
@@ -620,6 +624,25 @@ void TestQgsAttributeForm::testEditableJoin()
   ft0C = layerC->getFeature( 1 );
   QCOMPARE( ft0C.attribute( "col0" ), QVariant( 13 ) );
 
+  // all editor widget must have a multi edit button
+  layerA->startEditing();
+  layerB->startEditing();
+  layerC->startEditing();
+  layerA->select( ftA.id() );
+  form.setMode( QgsAttributeEditorContext::MultiEditMode );
+
+  // multi edit button must be displayed for A
+  QgsAttributeFormEditorWidget *formWidget = qobject_cast<QgsAttributeFormEditorWidget *>( form.mFormWidgets[1] );
+  QVERIFY( formWidget->mMultiEditButton->parent() );
+
+  // multi edit button must be displayed for B (join is editable)
+  formWidget = qobject_cast<QgsAttributeFormEditorWidget *>( form.mFormWidgets[1] );
+  QVERIFY( formWidget->mMultiEditButton->parent() );
+
+  // multi edit button must not be displayed for C (join is not editable)
+  formWidget = qobject_cast<QgsAttributeFormEditorWidget *>( form.mFormWidgets[2] );
+  QVERIFY( !formWidget->mMultiEditButton->parent() );
+
   // clean
   delete layerA;
   delete layerB;
@@ -856,6 +879,41 @@ void TestQgsAttributeForm::testUpsertOnEdit()
   delete layerC;
 }
 
+void TestQgsAttributeForm::testFixAttributeForm()
+{
+  QString def = QStringLiteral( "Point?field=id:integer&field=col1:integer" );
+  QgsVectorLayer *layer = new QgsVectorLayer( def, QStringLiteral( "layer" ), QStringLiteral( "memory" ) );
+
+  QVERIFY( layer );
+
+  QgsFeature f( layer->fields() );
+  f.setAttribute( 0, 1 );
+  f.setAttribute( 1, 681 );
+
+  QgsAttributeForm form( layer );
+
+  form.setMode( QgsAttributeEditorContext::FixAttributeMode );
+  form.setFeature( f );
+
+  QgsEditorWidgetWrapper *ww = qobject_cast<QgsEditorWidgetWrapper *>( form.mWidgets[1] );
+  QCOMPARE( ww->field().name(), QString( "col1" ) );
+  QCOMPARE( ww->value(), QVariant( 681 ) );
+
+  // now change the value
+  ww->setValue( QVariant( 630 ) );
+
+  // the value should be updated
+  QCOMPARE( ww->value(), QVariant( 630 ) );
+  // the feature is not saved yet, so contains the old value
+  QCOMPARE( form.feature().attribute( QStringLiteral( "col1" ) ), QVariant( 681 ) );
+  // now save the feature and enjoy its new value, but don't update the layer
+  QVERIFY( form.save() );
+  QCOMPARE( form.feature().attribute( QStringLiteral( "col1" ) ), QVariant( 630 ) );
+  QCOMPARE( ( int )layer->featureCount(), 0 );
+
+  delete layer;
+}
+
 void TestQgsAttributeForm::testAttributeFormInterface()
 {
   // Issue https://github.com/qgis/QGIS/issues/29667
@@ -925,6 +983,8 @@ void TestQgsAttributeForm::testDefaultValueUpdate()
   layer->setDefaultValueDefinition( 2, QgsDefaultValue( QStringLiteral( "\"col0\"+\"col1\"" ) ) );
   layer->setDefaultValueDefinition( 3, QgsDefaultValue( QStringLiteral( "\"col2\"" ) ) );
 
+  layer->startEditing();
+
   // build a form for this feature
   QgsFeature ft( layer->dataProvider()->fields(), 1 );
   ft.setAttribute( QStringLiteral( "col0" ), 0 );
@@ -986,6 +1046,8 @@ void TestQgsAttributeForm::testDefaultValueUpdateRecursion()
   layer->setDefaultValueDefinition( 2, QgsDefaultValue( QStringLiteral( "\"col1\"+1" ) ) );
   layer->setDefaultValueDefinition( 3, QgsDefaultValue( QStringLiteral( "\"col2\"+1" ) ) );
 
+  layer->startEditing();
+
   // build a form for this feature
   QgsFeature ft( layer->dataProvider()->fields(), 1 );
   ft.setAttribute( QStringLiteral( "col0" ), 0 );
@@ -1041,6 +1103,62 @@ void TestQgsAttributeForm::testDefaultValueUpdateRecursion()
   QCOMPARE( ww1->value().toInt(), 41 );
   QCOMPARE( ww2->value().toInt(), 42 );
   QCOMPARE( ww3->value().toInt(), 43 );
+}
+
+void TestQgsAttributeForm::testSameFieldSync()
+{
+  // Check that widget synchronisation works when a form contains the same field several times
+  // and there is no issues when editing
+
+  // make a temporary vector layer
+  QString def = QStringLiteral( "Point?field=col0:integer" );
+  QgsVectorLayer *layer = new QgsVectorLayer( def, QStringLiteral( "test" ), QStringLiteral( "memory" ) );
+  layer->setEditorWidgetSetup( 0, QgsEditorWidgetSetup( QStringLiteral( "TextEdit" ), QVariantMap() ) );
+
+  // add a feature to the vector layer
+  QgsFeature ft( layer->dataProvider()->fields(), 1 );
+  ft.setAttribute( QStringLiteral( "col0" ), 10 );
+
+  // add same field twice so they get synced
+  QgsEditFormConfig editFormConfig = layer->editFormConfig();
+  editFormConfig.clearTabs();
+  editFormConfig.addTab( new QgsAttributeEditorField( "col0", 0, editFormConfig.invisibleRootContainer() ) );
+  editFormConfig.addTab( new QgsAttributeEditorField( "col0", 0, editFormConfig.invisibleRootContainer() ) );
+  editFormConfig.setLayout( QgsEditFormConfig::TabLayout );
+  layer->setEditFormConfig( editFormConfig );
+
+  layer->startEditing();
+
+  // build a form for this feature
+  QgsAttributeForm form( layer );
+  form.setFeature( ft );
+
+  QList<QLineEdit *> les = form.findChildren<QLineEdit *>( "col0" );
+  QCOMPARE( les.count(), 2 );
+
+  les[0]->setCursorPosition( 1 );
+  QTest::keyClick( les[0], Qt::Key_2 );
+  QTest::keyClick( les[0], Qt::Key_3 );
+
+  QCOMPARE( les[0]->text(), QString( "1230" ) );
+  QCOMPARE( les[0]->cursorPosition(), 3 );
+  QCOMPARE( les[1]->text(), QString( "1230" ) );
+  QCOMPARE( les[1]->cursorPosition(), 4 );
+}
+
+void TestQgsAttributeForm::testZeroDoubles()
+{
+  // See issue GH #34118
+  QString def = QStringLiteral( "Point?field=col0:double" );
+  QgsVectorLayer layer { def, QStringLiteral( "test" ), QStringLiteral( "memory" ) };
+  layer.setEditorWidgetSetup( 0, QgsEditorWidgetSetup( QStringLiteral( "TextEdit" ), QVariantMap() ) );
+  QgsFeature ft( layer.dataProvider()->fields(), 1 );
+  ft.setAttribute( QStringLiteral( "col0" ), 0.0 );
+  QgsAttributeForm form( &layer );
+  form.setFeature( ft );
+  QList<QLineEdit *> les = form.findChildren<QLineEdit *>( "col0" );
+  QCOMPARE( les.count(), 1 );
+  QCOMPARE( les.at( 0 )->text(), QStringLiteral( "0" ) );
 }
 
 QGSTEST_MAIN( TestQgsAttributeForm )

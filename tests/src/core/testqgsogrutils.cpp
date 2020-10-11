@@ -205,7 +205,7 @@ void TestQgsOgrUtils::ogrGeometryToQgsGeometry2()
   QCOMPARE( static_cast< int >( geom.wkbType() ), type );
 
   // bit of trickiness here - QGIS wkt conversion changes 25D -> Z, so account for that
-  wkt.replace( QStringLiteral( "25D" ), QStringLiteral( "Z" ) );
+  wkt.replace( QLatin1String( "25D" ), QLatin1String( "Z" ) );
   QCOMPARE( geom.asWkt( 3 ), wkt );
 }
 
@@ -474,6 +474,14 @@ void TestQgsOgrUtils::stringToFields()
 
   // geojson string
   fields = QgsOgrUtils::stringToFields( QStringLiteral( "{\n\"type\": \"Feature\",\"geometry\": {\"type\": \"Point\",\"coordinates\": [125, 10]},\"properties\": {\"name\": \"Dinagat Islands\",\"height\":5.5}}" ), QTextCodec::codecForName( "System" ) );
+  QCOMPARE( fields.count(), 2 );
+  QCOMPARE( fields.at( 0 ).name(), QString( "name" ) );
+  QCOMPARE( fields.at( 0 ).type(), QVariant::String );
+  QCOMPARE( fields.at( 1 ).name(), QString( "height" ) );
+  QCOMPARE( fields.at( 1 ).type(), QVariant::Double );
+
+  // geojson string with 2 features
+  fields = QgsOgrUtils::stringToFields( QStringLiteral( "{ \"type\": \"FeatureCollection\",\"features\":[{\n\"type\": \"Feature\",\"geometry\": {\"type\": \"Point\",\"coordinates\": [125, 10]},\"properties\": {\"name\": \"Dinagat Islands\",\"height\":5.5}}, {\n\"type\": \"Feature\",\"geometry\": {\"type\": \"Point\",\"coordinates\": [110, 20]},\"properties\": {\"name\": \"Henry Gale Island\",\"height\":6.5}}]}" ), QTextCodec::codecForName( "System" ) );
   QCOMPARE( fields.count(), 2 );
   QCOMPARE( fields.at( 0 ).name(), QString( "name" ) );
   QCOMPARE( fields.at( 0 ).type(), QVariant::String );

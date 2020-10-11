@@ -35,11 +35,11 @@
 #include "qgssettings.h"
 #include <mutex>
 
-QgsVectorDataProvider::QgsVectorDataProvider( const QString &uri, const ProviderOptions &options )
-  : QgsDataProvider( uri, options )
+QgsVectorDataProvider::QgsVectorDataProvider( const QString &uri, const ProviderOptions &options,
+    QgsDataProvider::ReadFlags flags )
+  : QgsDataProvider( uri, options, flags )
+  , mTemporalCapabilities( qgis::make_unique< QgsVectorDataProviderTemporalCapabilities >() )
 {
-  QgsSettings settings;
-  setEncoding( settings.value( QStringLiteral( "UI/encoding" ), "System" ).toString() );
 }
 
 QString QgsVectorDataProvider::storageType() const
@@ -88,6 +88,11 @@ bool QgsVectorDataProvider::addFeatures( QgsFeatureList &flist, Flags flags )
   Q_UNUSED( flist )
   Q_UNUSED( flags )
   return false;
+}
+
+QString QgsVectorDataProvider::lastError() const
+{
+  return mErrors.isEmpty() ? QString() : mErrors.last();
 }
 
 bool QgsVectorDataProvider::deleteFeatures( const QgsFeatureIds &ids )
@@ -150,7 +155,7 @@ QgsFieldConstraints::Constraints QgsVectorDataProvider::fieldConstraints( int fi
 {
   QgsFields f = fields();
   if ( fieldIndex < 0 || fieldIndex >= f.count() )
-    return nullptr;
+    return QgsFieldConstraints::Constraints();
 
   return f.at( fieldIndex ).constraints().constraints();
 }
@@ -201,7 +206,8 @@ void QgsVectorDataProvider::setEncoding( const QString &e )
 
   if ( !mEncoding && e != QLatin1String( "System" ) )
   {
-    QgsMessageLog::logMessage( tr( "Codec %1 not found. Falling back to system locale" ).arg( e ) );
+    if ( !e.isEmpty() )
+      QgsMessageLog::logMessage( tr( "Codec %1 not found. Falling back to system locale" ).arg( e ) );
     mEncoding = QTextCodec::codecForName( "System" );
   }
 
@@ -303,7 +309,7 @@ QString QgsVectorDataProvider::capabilitiesString() const
     abilitiesList += tr( "Curved Geometries" );
   }
 
-  return abilitiesList.join( QStringLiteral( ", " ) );
+  return abilitiesList.join( QLatin1String( ", " ) );
 }
 
 
@@ -388,7 +394,7 @@ bool QgsVectorDataProvider::supportedType( const QgsField &field ) const
       }
     }
 
-    QgsDebugMsg( QStringLiteral( "native type matches" ) );
+    QgsDebugMsgLevel( QStringLiteral( "native type matches" ), 3 );
     return true;
   }
 
@@ -561,6 +567,33 @@ void QgsVectorDataProvider::fillMinMaxCache() const
             mCacheMaxValues[ attributeIndex ] = value;
           break;
         }
+        case QVariant::DateTime:
+        {
+          QDateTime value = varValue.toDateTime();
+          if ( value < mCacheMinValues[ attributeIndex ].toDateTime() || !mCacheMinValues[ attributeIndex ].isValid() )
+            mCacheMinValues[attributeIndex ] = value;
+          if ( value > mCacheMaxValues[ attributeIndex ].toDateTime() || !mCacheMaxValues[ attributeIndex ].isValid() )
+            mCacheMaxValues[ attributeIndex ] = value;
+          break;
+        }
+        case QVariant::Date:
+        {
+          QDate value = varValue.toDate();
+          if ( value < mCacheMinValues[ attributeIndex ].toDate() || !mCacheMinValues[ attributeIndex ].isValid() )
+            mCacheMinValues[attributeIndex ] = value;
+          if ( value > mCacheMaxValues[ attributeIndex ].toDate() || !mCacheMaxValues[ attributeIndex ].isValid() )
+            mCacheMaxValues[ attributeIndex ] = value;
+          break;
+        }
+        case QVariant::Time:
+        {
+          QTime value = varValue.toTime();
+          if ( value < mCacheMinValues[ attributeIndex ].toTime() || !mCacheMinValues[ attributeIndex ].isValid() )
+            mCacheMinValues[attributeIndex ] = value;
+          if ( value > mCacheMaxValues[ attributeIndex ].toTime() || !mCacheMaxValues[ attributeIndex ].isValid() )
+            mCacheMaxValues[ attributeIndex ] = value;
+          break;
+        }
         default:
         {
           QString value = varValue.toString();
@@ -596,11 +629,6 @@ QgsTransaction *QgsVectorDataProvider::transaction() const
   return nullptr;
 }
 
-void QgsVectorDataProvider::forceReload()
-{
-  emit dataChanged();
-}
-
 static bool _compareEncodings( const QString &s1, const QString &s2 )
 {
   return s1.toLower() < s2.toLower();
@@ -612,7 +640,7 @@ QStringList QgsVectorDataProvider::availableEncodings()
   std::call_once( initialized, [ = ]
   {
     const auto codecs { QTextCodec::availableCodecs() };
-    for ( const QString &codec : codecs )
+    for ( const QByteArray &codec : codecs )
     {
       sEncodings << codec;
     }
@@ -845,4 +873,14 @@ QList<QgsRelation> QgsVectorDataProvider::discoverRelations( const QgsVectorLaye
 void QgsVectorDataProvider::handlePostCloneOperations( QgsVectorDataProvider * )
 {
 
+}
+
+QgsVectorDataProviderTemporalCapabilities *QgsVectorDataProvider::temporalCapabilities()
+{
+  return mTemporalCapabilities.get();
+}
+
+const QgsVectorDataProviderTemporalCapabilities *QgsVectorDataProvider::temporalCapabilities() const
+{
+  return mTemporalCapabilities.get();
 }

@@ -29,6 +29,7 @@ SET(QGIS_SERVER_SRCS
   qgsserverapi.cpp
   qgsserverogcapi.cpp
   qgsserverogcapihandler.cpp
+  qgsserverstatichandler.cpp
   qgsserverapiutils.cpp
   qgsserverapicontext.cpp
   qgsserverparameters.cpp
@@ -51,32 +52,24 @@ SET(QGIS_SERVER_SRCS
 )
 
 SET (QGIS_SERVER_HDRS
-  qgsservicemodule.h
-  qgsmapserviceexception.h
-  qgsserverapi.h
-  qgsserverogcapi.h
-  qgsserverogcapihandler.h
-  qgsserverapicontext.h
-  qgsserverquerystringparameter.h
-)
-
-
-SET (QGIS_SERVER_MOC_HDRS
   qgscapabilitiescache.h
   qgsconfigcache.h
+  qgsmapserviceexception.h
+  qgsserverapi.h
+  qgsserverapicontext.h
   qgsserverlogger.h
   qgsserverogcapi.h
-  qgsserversettings.h
+  qgsserverogcapihandler.h
+  qgsserverstatichandler.h
   qgsserverparameters.h
   qgsserverquerystringparameter.h
+  qgsserversettings.h
+  qgsservicemodule.h
 )
 
 
 #############################################################
 # qgis_server library
-
-
-SET(QGIS_SERVER_MOC_HDRS ${QGIS_SERVER_MOC_HDRS})
 
 IF (WITH_SERVER_PLUGINS)
   SET(QGIS_SERVER_SRCS ${QGIS_SERVER_SRCS}
@@ -88,14 +81,6 @@ IF (WITH_SERVER_PLUGINS)
     qgsservercachemanager.cpp
   )
 ENDIF (WITH_SERVER_PLUGINS)
-
-QT5_WRAP_CPP(QGIS_SERVER_MOC_SRCS ${QGIS_SERVER_MOC_HDRS})
-
-IF(MSVC)
-  SET_SOURCE_FILES_PROPERTIES(${QGIS_SERVER_MOC_SRCS} PROPERTIES COMPILE_FLAGS "/wd4512 /wd4996" )
-ELSE(MSVC)
-  SET_SOURCE_FILES_PROPERTIES(${QGIS_SERVER_MOC_SRCS} PROPERTIES COMPILE_FLAGS "-Wno-deprecated-declarations" )
-ENDIF(MSVC)
 
 INCLUDE_DIRECTORIES(SYSTEM
   ${GDAL_INCLUDE_DIR}
@@ -118,23 +103,26 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/src/core/dxf
   ${CMAKE_SOURCE_DIR}/src/core/expression
   ${CMAKE_SOURCE_DIR}/src/core/geometry
+  ${CMAKE_SOURCE_DIR}/src/core/labeling
   ${CMAKE_SOURCE_DIR}/src/core/metadata
   ${CMAKE_SOURCE_DIR}/src/core/raster
   ${CMAKE_SOURCE_DIR}/src/core/symbology
+  ${CMAKE_SOURCE_DIR}/src/core/effects
   ${CMAKE_SOURCE_DIR}/src/core/layout
   ${CMAKE_SOURCE_DIR}/src/core/layertree
+  ${CMAKE_SOURCE_DIR}/src/core/textrenderer
   ${CMAKE_SOURCE_DIR}/src/analysis/interpolation
-  ${CMAKE_SOURCE_DIR}/src/plugins/diagram_overlay
   ${CMAKE_SOURCE_DIR}/src/python
+  ${CMAKE_SOURCE_DIR}/external
+  ${CMAKE_SOURCE_DIR}/external/nlohmann
 
   ${CMAKE_BINARY_DIR}/src/core
   ${CMAKE_BINARY_DIR}/src/python
   ${CMAKE_BINARY_DIR}/src/analysis
   ${CMAKE_BINARY_DIR}/src/server
-  ${CMAKE_SOURCE_DIR}/external
 )
 
-ADD_LIBRARY(qgis_server SHARED ${QGIS_SERVER_SRCS} ${QGIS_SERVER_MOC_SRCS} ${QGIS_SERVER_HDRS} ${QGIS_SERVER_MOC_HDRS})
+ADD_LIBRARY(qgis_server SHARED ${QGIS_SERVER_SRCS} ${QGIS_SERVER_HDRS})
 
 GENERATE_EXPORT_HEADER(
   qgis_server
@@ -152,13 +140,16 @@ ENDIF (NOT ANDROID)
 
 TARGET_LINK_LIBRARIES(qgis_server
   qgis_core
-  qgis_analysis
   ${PROJ_LIBRARY}
   ${FCGI_LIBRARY}
   ${POSTGRES_LIBRARY}
   ${GDAL_LIBRARY}
   ${QCA_LIBRARY}
 )
+
+IF (WITH_ANALYSIS)
+  TARGET_LINK_LIBRARIES(qgis_server qgis_analysis)
+ENDIF(WITH_ANALYSIS)
 
 IF (WITH_BINDINGS)
   TARGET_LINK_LIBRARIES(qgis_server qgispython)
@@ -183,11 +174,12 @@ INSTALL(TARGETS qgis_server
 
 # add test resources, e.g. standard test font
 SET(QGIS_SERVER_TESTRCCS ../../tests/testdata/testdata.qrc)
-QT5_ADD_RESOURCES(QGIS_SERVER_TESTRCC_SRCS ${QGIS_SERVER_TESTRCCS})
 
-ADD_EXECUTABLE(qgis_mapserv.fcgi qgis_map_serv.cpp ${QGIS_SERVER_TESTRCC_SRCS})
+ADD_EXECUTABLE(qgis_mapserv.fcgi qgis_map_serv.cpp ${QGIS_SERVER_TESTRCCS})
+ADD_EXECUTABLE(qgis_mapserver qgis_mapserver.cpp ${QGIS_SERVER_TESTRCCS})
 
 TARGET_LINK_LIBRARIES(qgis_mapserv.fcgi qgis_server)
+TARGET_LINK_LIBRARIES(qgis_mapserver qgis_server)
 
 # clang-tidy
 IF(CLANG_TIDY_EXE)
@@ -205,8 +197,17 @@ INSTALL(TARGETS
   qgis_mapserv.fcgi
   DESTINATION ${QGIS_CGIBIN_DIR}
 )
+
+INSTALL(TARGETS
+  qgis_mapserver
+  DESTINATION ${QGIS_BIN_DIR}
+)
+
 INSTALL(FILES
   admin.sld
   wms_metadata.xml
   DESTINATION ${QGIS_CGIBIN_DIR}
+)
+ADD_CUSTOM_TARGET(qgis_server_full
+  DEPENDS qgis_mapserv.fcgi wms wfs wcs wfs3 wmts qgis_server landingpage
 )

@@ -59,10 +59,10 @@ struct QgsOgrLayerReleaser
 using QgsOgrLayerUniquePtr = std::unique_ptr< QgsOgrLayer, QgsOgrLayerReleaser>;
 
 /**
-  \class QgsOgrProvider
-  \brief Data provider for OGR datasources
+ * \class QgsOgrProvider
+ * \brief Data provider for OGR datasources
   */
-class QgsOgrProvider : public QgsVectorDataProvider
+class QgsOgrProvider final: public QgsVectorDataProvider
 {
     Q_OBJECT
 
@@ -86,7 +86,8 @@ class QgsOgrProvider : public QgsVectorDataProvider
      * \param options generic data provider options
      */
     explicit QgsOgrProvider( QString const &uri,
-                             const QgsDataProvider::ProviderOptions &providerOptions );
+                             const QgsDataProvider::ProviderOptions &providerOptions,
+                             QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
     ~QgsOgrProvider() override;
 
@@ -121,7 +122,7 @@ class QgsOgrProvider : public QgsVectorDataProvider
     QString defaultValueClause( int fieldIndex ) const override;
     bool skipConstraintCheck( int fieldIndex, QgsFieldConstraints::Constraint constraint, const QVariant &value = QVariant() ) const override;
     void updateExtents() override;
-    bool addFeatures( QgsFeatureList &flist, QgsFeatureSink::Flags flags = nullptr ) override;
+    bool addFeatures( QgsFeatureList &flist, QgsFeatureSink::Flags flags = QgsFeatureSink::Flags() ) override;
     bool deleteFeatures( const QgsFeatureIds &id ) override;
     bool addAttributes( const QList<QgsField> &attributes ) override;
     bool deleteAttributes( const QgsAttributeIds &attributes ) override;
@@ -131,6 +132,7 @@ class QgsOgrProvider : public QgsVectorDataProvider
     bool createSpatialIndex() override;
     bool createAttributeIndex( int field ) override;
     QgsVectorDataProvider::Capabilities capabilities() const override;
+    QgsAttributeList pkAttributeIndexes() const override { return mPrimaryKeyAttrs; }
     void setEncoding( const QString &e ) override;
     bool enterUpdateMode() override { return _enterUpdateMode(); }
     bool leaveUpdateMode() override;
@@ -143,6 +145,7 @@ class QgsOgrProvider : public QgsVectorDataProvider
     QSet< QVariant > uniqueValues( int index, int limit = -1 ) const override;
     QStringList uniqueStringsMatching( int index, const QString &substring, int limit = -1,
                                        QgsFeedback *feedback = nullptr ) const override;
+    QgsFeatureSource::SpatialIndexPresence hasSpatialIndex() const override;
 
     QString name() const override;
     static QString providerKey();
@@ -163,14 +166,6 @@ class QgsOgrProvider : public QgsVectorDataProvider
     int layerIndex() const { return mLayerIndex; }
 
     QByteArray quotedIdentifier( const QByteArray &field ) const;
-
-    /**
-     * A forced reload invalidates the underlying connection.
-     * E.g. in case a shapefile is replaced, the old file will be closed
-     * and the new file will be opened.
-     */
-    void forceReload() override;
-    void reloadData() override;
 
   protected:
     //! Loads fields from input file to member attributeFields
@@ -208,6 +203,7 @@ class QgsOgrProvider : public QgsVectorDataProvider
   private:
     unsigned char *getGeometryPointer( OGRFeatureH fet );
     QString ogrWkbGeometryTypeName( OGRwkbGeometryType type ) const;
+    static QString createIndexName( QString tableName, QString field );
 
     //! Starts a transaction if possible and return true in that case
     bool startTransaction();
@@ -231,9 +227,12 @@ class QgsOgrProvider : public QgsVectorDataProvider
     mutable std::unique_ptr< OGREnvelope > mExtent;
     bool mForceRecomputeExtent = false;
 
+    QList<int> mPrimaryKeyAttrs;
+
     /**
      * This member variable receives the same value as extent_
-     in the method QgsOgrProvider::extent(). The purpose is to prevent a memory leak*/
+     * in the method QgsOgrProvider::extent(). The purpose is to prevent a memory leak.
+    */
     mutable QgsRectangle mExtentRect;
 
     /**
@@ -259,13 +258,17 @@ class QgsOgrProvider : public QgsVectorDataProvider
     //! layer index
     int mLayerIndex = 0;
 
+    //! open options
+    QStringList mOpenOptions;
+
     //! was a sub layer requested?
     bool mIsSubLayer = false;
 
     /**
      * Optional geometry type for layers with multiple geometries,
-     *  otherwise wkbUnknown. This type is always flatten (2D) and single, it means
-     *  that 2D, 25D, single and multi types are mixed in one sublayer */
+     * otherwise wkbUnknown. This type is always flatten (2D) and single, it means
+     * that 2D, 25D, single and multi types are mixed in one sublayer.
+    */
     OGRwkbGeometryType mOgrGeometryTypeFilter = wkbUnknown;
 
     //! current spatial filter
@@ -319,19 +322,22 @@ class QgsOgrProvider : public QgsVectorDataProvider
 
     void computeCapabilities();
 
-    QgsVectorDataProvider::Capabilities mCapabilities = nullptr;
+    QgsVectorDataProvider::Capabilities mCapabilities = QgsVectorDataProvider::Capabilities();
 
     bool doInitialActionsForEdition();
 
     bool addAttributeOGRLevel( const QgsField &field, bool &ignoreErrorOut );
 
-#ifndef QT_NO_NETWORKPROXY
-    void setupProxy();
-#endif
-
     QgsOgrTransaction *mTransaction = nullptr;
 
     void setTransaction( QgsTransaction *transaction ) override;
+
+    /**
+    * Invalidates and reopens the file and resets the feature count
+    * E.g. in case a shapefile is replaced, the old file will be closed
+    * and the new file will be opened.
+    */
+    void reloadProviderData() override;
 };
 
 class QgsOgrDataset;
@@ -343,8 +349,8 @@ using QgsOgrDatasetSharedPtr = std::shared_ptr< QgsOgrDataset>;
 
 
 /**
-  \class QgsOgrProviderUtils
-  \brief Utility class with static methods
+ * \class QgsOgrProviderUtils
+ * \brief Utility class with static methods
   */
 class CORE_EXPORT QgsOgrProviderUtils
 {
@@ -378,20 +384,8 @@ class CORE_EXPORT QgsOgrProviderUtils
         DatasetWithLayers(): mutex( QMutex::Recursive ) {}
     };
 
-    //! Global mutex for QgsOgrProviderUtils
-    static QMutex sGlobalMutex;
-
     //! Map dataset identification to a list of corresponding DatasetWithLayers*
     static QMap< DatasetIdentification, QList<DatasetWithLayers *> > sMapSharedDS;
-
-    //! Map a dataset name to the number of opened GDAL dataset objects on it (if opened with GDALOpenWrapper, only for GPKG)
-    static QMap< QString, int > sMapCountOpenedDS;
-
-    //! Map a dataset handle to its update open mode (if opened with GDALOpenWrapper, only for GPKG)
-    static QHash< GDALDatasetH, bool> sMapDSHandleToUpdateMode;
-
-    //! Map a dataset name to its last modified data
-    static QMap< QString, QDateTime > sMapDSNameToLastModifiedDate;
 
     static bool canUseOpenedDatasets( const QString &dsName );
 
@@ -531,8 +525,8 @@ class CORE_EXPORT QgsOgrProviderUtils
 
 
 /**
-  \class QgsOgrDataset
-  \brief Wrap a GDALDatasetH object in a thread-safe way
+ * \class QgsOgrDataset
+ * \brief Wrap a GDALDatasetH object in a thread-safe way
   */
 class QgsOgrDataset
 {
@@ -559,9 +553,9 @@ class QgsOgrDataset
 
 
 /**
-  \class QgsOgrFeatureDefn
-  \brief Wrap a OGRFieldDefnH object in a thread-safe way
-  */
+ * \class QgsOgrFeatureDefn
+ * \brief Wrap a OGRFieldDefnH object in a thread-safe way
+ */
 class QgsOgrFeatureDefn
 {
     friend class QgsOgrLayer;
@@ -601,8 +595,8 @@ class QgsOgrFeatureDefn
 
 
 /**
-  \class QgsOgrLayer
-  \brief Wrap a OGRLayerH object in a thread-safe way
+ * \class QgsOgrLayer
+ * \brief Wrap a OGRLayerH object in a thread-safe way
   */
 class QgsOgrLayer
 {
@@ -734,13 +728,16 @@ class QgsOgrLayer
 
     //! Wrapper of GDALDatasetExecuteSQL().
     QgsOgrLayerUniquePtr ExecuteSQL( const QByteArray &sql );
+
+    // Wrapper of GDALGetMetadataItem()
+    QString GetMetadataItem( const QString &key, const QString &domain = QString() );
 };
 
 /**
  * Entry point for registration of the OGR data provider
  * \since QGIS 3.10
  */
-class QgsOgrProviderMetadata: public QgsProviderMetadata
+class QgsOgrProviderMetadata final: public QgsProviderMetadata
 {
   public:
 
@@ -749,8 +746,9 @@ class QgsOgrProviderMetadata: public QgsProviderMetadata
     void initProvider() override;
     void cleanupProvider() override;
     QList< QgsDataItemProvider * > dataItemProviders() const override;
-    QgsOgrProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options ) override;
+    QgsOgrProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options, QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() ) override;
     QVariantMap decodeUri( const QString &uri ) override;
+    QString encodeUri( const QVariantMap &parts ) override;
     QString filters( FilterType type ) override;
     QgsVectorLayerExporter::ExportError createEmptyLayer(
       const QString &uri,

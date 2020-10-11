@@ -28,12 +28,13 @@
 #include "qgswindow3dengine.h"
 #include "qgs3dnavigationwidget.h"
 #include "qgssettings.h"
+#include "qgstemporalcontroller.h"
 
 Qgs3DMapCanvas::Qgs3DMapCanvas( QWidget *parent )
   : QWidget( parent )
 {
   QgsSettings setting;
-  mEngine = new QgsWindow3DEngine;
+  mEngine = new QgsWindow3DEngine( this );
 
   connect( mEngine, &QgsAbstract3DEngine::imageCaptured, this, [ = ]( const QImage & image )
   {
@@ -45,7 +46,7 @@ Qgs3DMapCanvas::Qgs3DMapCanvas( QWidget *parent )
   mNavigationWidget = new Qgs3DNavigationWidget( this );
 
   QHBoxLayout *hLayout = new QHBoxLayout( this );
-  hLayout->setMargin( 0 );
+  hLayout->setContentsMargins( 0, 0, 0, 0 );
   hLayout->addWidget( mContainer, 1 );
   hLayout->addWidget( mNavigationWidget );
   this->setOnScreenNavigationVisibility(
@@ -57,7 +58,13 @@ Qgs3DMapCanvas::Qgs3DMapCanvas( QWidget *parent )
 
 Qgs3DMapCanvas::~Qgs3DMapCanvas()
 {
+  if ( mMapTool )
+    mMapTool->deactivate();
+  // make sure the scene is deleted while map settings object is still alive
+  delete mScene;
+  mScene = nullptr;
   delete mMap;
+  mMap = nullptr;
 }
 
 void Qgs3DMapCanvas::resizeEvent( QResizeEvent *ev )
@@ -101,6 +108,8 @@ void Qgs3DMapCanvas::setMap( Qgs3DMapSettings *map )
     mNavigationWidget->updateFromCamera();
   }
   );
+
+  emit mapSettingsChanged();
 }
 
 QgsCameraController *Qgs3DMapCanvas::cameraController()
@@ -184,10 +193,24 @@ bool Qgs3DMapCanvas::eventFilter( QObject *watched, QEvent *event )
   return false;
 }
 
-
 void Qgs3DMapCanvas::setOnScreenNavigationVisibility( bool visibility )
 {
   mNavigationWidget->setVisible( visibility );
   QgsSettings setting;
   setting.setValue( QStringLiteral( "/3D/navigationWidget/visibility" ), visibility, QgsSettings::Gui );
+}
+
+void Qgs3DMapCanvas::setTemporalController( QgsTemporalController *temporalController )
+{
+  if ( mTemporalController )
+    disconnect( mTemporalController, &QgsTemporalController::updateTemporalRange, this, &Qgs3DMapCanvas::updateTemporalRange );
+
+  mTemporalController = temporalController;
+  connect( mTemporalController, &QgsTemporalController::updateTemporalRange, this, &Qgs3DMapCanvas::updateTemporalRange );
+}
+
+void Qgs3DMapCanvas::updateTemporalRange( const QgsDateTimeRange &temporalrange )
+{
+  mMap->setTemporalRange( temporalrange );
+  mScene->updateTemporal();
 }

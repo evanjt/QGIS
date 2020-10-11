@@ -34,7 +34,7 @@ class TestQgsPostgresTransaction(unittest.TestCase):
         Setup the involved layers and relations for a n:m relation
         :return:
         """
-        cls.dbconn = 'dbname=\'qgis_test\''
+        cls.dbconn = 'service=qgis_test'
         if 'QGIS_PGTEST_DB' in os.environ:
             cls.dbconn = os.environ['QGIS_PGTEST_DB']
         # Create test layer
@@ -103,6 +103,27 @@ class TestQgsPostgresTransaction(unittest.TestCase):
         noTg = QgsProject.instance().transactionGroup("xxxpostgres", conn_string)
         self.assertIsNone(noTg)
         self.rollbackTransaction()
+
+    def test_transactionGroupEditingStatus(self):
+        """Not particularly related to PG but it fits here nicely: test GH #39282"""
+
+        project = QgsProject()
+        project.setAutoTransaction(True)
+
+        vl_b = QgsVectorLayer(self.dbconn + ' sslmode=disable key=\'pk\' table="qgis_test"."books" sql=', 'books',
+                              'postgres')
+        vl_a = QgsVectorLayer(self.dbconn + ' sslmode=disable key=\'pk\' table="qgis_test"."authors" sql=',
+                              'authors', 'postgres')
+
+        project.addMapLayers([vl_a, vl_b])
+
+        vl_a.startEditing()
+        self.assertTrue(vl_a.isEditable())
+        self.assertTrue(vl_b.isEditable())
+
+        self.assertTrue(vl_a.commitChanges(False))
+        self.assertTrue(vl_a.isEditable())
+        self.assertTrue(vl_b.isEditable())
 
 
 if __name__ == '__main__':

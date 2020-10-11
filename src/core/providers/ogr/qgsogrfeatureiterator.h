@@ -33,7 +33,7 @@ class QgsOgrProvider;
 class QgsOgrDataset;
 using QgsOgrDatasetSharedPtr = std::shared_ptr< QgsOgrDataset>;
 
-class QgsOgrFeatureSource : public QgsAbstractFeatureSource
+class QgsOgrFeatureSource final: public QgsAbstractFeatureSource
 {
   public:
     explicit QgsOgrFeatureSource( const QgsOgrProvider *p );
@@ -56,15 +56,16 @@ class QgsOgrFeatureSource : public QgsAbstractFeatureSource
     QgsCoordinateReferenceSystem mCrs;
     QgsWkbTypes::Type mWkbType = QgsWkbTypes::Unknown;
     QgsOgrDatasetSharedPtr mSharedDS = nullptr;
+    QgsTransaction *mTransaction = nullptr;
 
     friend class QgsOgrFeatureIterator;
     friend class QgsOgrExpressionCompiler;
 };
 
-class QgsOgrFeatureIterator : public QgsAbstractFeatureIteratorFromSource<QgsOgrFeatureSource>
+class QgsOgrFeatureIterator final: public QgsAbstractFeatureIteratorFromSource<QgsOgrFeatureSource>
 {
   public:
-    QgsOgrFeatureIterator( QgsOgrFeatureSource *source, bool ownSource, const QgsFeatureRequest &request );
+    QgsOgrFeatureIterator( QgsOgrFeatureSource *source, bool ownSource, const QgsFeatureRequest &request, QgsTransaction *transaction );
 
     ~QgsOgrFeatureIterator() override;
 
@@ -101,6 +102,11 @@ class QgsOgrFeatureIterator : public QgsAbstractFeatureIteratorFromSource<QgsOgr
 
     bool mFirstFieldIsFid = false;
     QgsFields mFieldsWithoutFid;
+
+    /* This flag tells the iterator when to skip all calls that might reset the reading (rewind),
+     * to be used when the request is for a single fid or for a list of fids and we are inside
+     * a transaction for SQLITE-based layers */
+    bool mAllowResetReading = true;
 
     bool fetchFeatureWithId( QgsFeatureId id, QgsFeature &feature ) const;
 

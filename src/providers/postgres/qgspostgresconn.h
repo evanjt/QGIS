@@ -28,6 +28,7 @@
 #include "qgsdatasourceuri.h"
 #include "qgswkbtypes.h"
 #include "qgsconfig.h"
+#include "qgsvectordataprovider.h"
 
 extern "C"
 {
@@ -51,6 +52,7 @@ enum QgsPostgresPrimaryKeyType
 {
   PktUnknown,
   PktInt,
+  PktInt64,
   PktUint64,
   PktTid,
   PktOid,
@@ -82,6 +84,7 @@ struct QgsPostgresLayerProperty
   QString                       relKind;
   bool                          isView = false;
   bool                          isMaterializedView = false;
+  bool                          isForeignTable = false;
   bool                          isRaster = false;
   QString                       tableComment;
 
@@ -145,7 +148,7 @@ struct QgsPostgresLayerProperty
                  geometryColName,
                  typeString,
                  sridString,
-                 pkCols.join( QStringLiteral( "|" ) ),
+                 pkCols.join( QLatin1Char( '|' ) ),
                  sql )
            .arg( nSpCols );
   }
@@ -198,41 +201,35 @@ class QgsPostgresConn : public QObject
      */
     static QgsPostgresConn *connectDb( const QString &connInfo, bool readOnly, bool shared = true, bool transaction = false );
 
-    void ref() { ++mRef; }
+    void ref();
     void unref();
 
     //! Gets postgis version string
-    QString postgisVersion();
+    QString postgisVersion() const;
 
     //! Gets status of GEOS capability
-    bool hasGEOS();
+    bool hasGEOS() const;
 
     //! Gets status of topology capability
-    bool hasTopology();
+    bool hasTopology() const;
 
     //! Gets status of Pointcloud capability
-    bool hasPointcloud();
+    bool hasPointcloud() const;
 
     //! Gets status of Raster capability
-    bool hasRaster();
-
-    //! Gets status of GIST capability
-    bool hasGIST();
-
-    //! Gets status of PROJ4 capability
-    bool hasPROJ();
+    bool hasRaster() const;
 
     //! encode wkb in hex
-    bool useWkbHex() { return mUseWkbHex; }
+    bool useWkbHex() const { return mUseWkbHex; }
 
     //! major PostGIS version
-    int majorVersion() { return mPostgisVersionMajor; }
+    int majorVersion() const { return mPostgisVersionMajor; }
 
     //! minor PostGIS version
-    int minorVersion() { return mPostgisVersionMinor; }
+    int minorVersion() const { return mPostgisVersionMinor; }
 
     //! PostgreSQL version
-    int pgVersion() { return mPostgresqlVersion; }
+    int pgVersion() const { return mPostgresqlVersion; }
 
     //! run a query and free result buffer
     bool PQexecNR( const QString &query );
@@ -253,6 +250,7 @@ class QgsPostgresConn : public QObject
 
     // run a query and check for errors, thread-safe
     PGresult *PQexec( const QString &query, bool logError = true, bool retry = true ) const;
+    int PQCancel();
     void PQfinish();
     QString PQerrorMessage() const;
     int PQstatus() const;
@@ -319,7 +317,15 @@ class QgsPostgresConn : public QObject
      */
     bool getSchemas( QList<QgsPostgresSchemaProperty> &schemas );
 
+    /**
+     * Determine type and srid of a layer from data (possibly estimated)
+     */
     void retrieveLayerTypes( QgsPostgresLayerProperty &layerProperty, bool useEstimatedMetadata );
+
+    /**
+     * Determine type and srid of a vector of layers from data (possibly estimated)
+     */
+    void retrieveLayerTypes( QVector<QgsPostgresLayerProperty *> &layerProperties, bool useEstimatedMetadata );
 
     /**
      * Gets information about the spatial tables
@@ -335,9 +341,17 @@ class QgsPostgresConn : public QObject
 
     qint64 getBinaryInt( QgsPostgresResult &queryResult, int row, int col );
 
+    QString fieldExpressionForWhereClause( const QgsField &fld, QVariant::Type valueType = QVariant::LastType, QString expr = "%1" );
+
     QString fieldExpression( const QgsField &fld, QString expr = "%1" );
 
     QString connInfo() const { return mConnInfo; }
+
+    /**
+     * Returns a list of supported native types for this connection.
+     * \since QGIS 3.16
+     */
+    QList<QgsVectorDataProvider::NativeType> nativeTypes();
 
     /**
      * Returns the underlying database.
@@ -368,6 +382,7 @@ class QgsPostgresConn : public QObject
     static bool publicSchemaOnly( const QString &connName );
     static bool geometryColumnsOnly( const QString &connName );
     static bool dontResolveType( const QString &connName );
+    static bool useEstimatedMetadata( const QString &connName );
     static bool allowGeometrylessTables( const QString &connName );
     static bool allowProjectsInDatabase( const QString &connName );
     static void deleteConnection( const QString &connName );
@@ -386,42 +401,41 @@ class QgsPostgresConn : public QObject
     QString mConnInfo;
 
     //! GEOS capability
-    bool mGeosAvailable;
+    mutable bool mGeosAvailable;
+
+    //! PROJ capability
+    mutable bool mProjAvailable;
 
     //! Topology capability
-    bool mTopologyAvailable;
+    mutable bool mTopologyAvailable;
 
     //! PostGIS version string
-    QString mPostgisVersionInfo;
+    mutable QString mPostgisVersionInfo;
 
-    //! Are mPostgisVersionMajor, mPostgisVersionMinor, mGeosAvailable, mGistAvailable, mProjAvailable, mTopologyAvailable valid?
-    bool mGotPostgisVersion;
+    //! Are mPostgisVersionMajor, mPostgisVersionMinor, mGeosAvailable, mTopologyAvailable valid?
+    mutable bool mGotPostgisVersion;
 
     //! PostgreSQL version
-    int mPostgresqlVersion;
+    mutable int mPostgresqlVersion;
 
     //! PostGIS major version
-    int mPostgisVersionMajor;
+    mutable int mPostgisVersionMajor;
 
     //! PostGIS minor version
-    int mPostgisVersionMinor;
-
-    //! GIST capability
-    bool mGistAvailable;
-
-    //! PROJ4 capability
-    bool mProjAvailable;
+    mutable int mPostgisVersionMinor;
 
     //! pointcloud support available
-    bool mPointcloudAvailable;
+    mutable bool mPointcloudAvailable;
 
     //! raster support available
-    bool mRasterAvailable;
+    mutable bool mRasterAvailable;
 
     //! encode wkb in hex
-    bool mUseWkbHex;
+    mutable bool mUseWkbHex;
 
     bool mReadOnly;
+
+    QStringList supportedSpatialTypes() const;
 
     static QMap<QString, QgsPostgresConn *> sConnectionsRW;
     static QMap<QString, QgsPostgresConn *> sConnectionsRO;
@@ -435,12 +449,12 @@ class QgsPostgresConn : public QObject
     /**
      * Flag indicating whether data from binary cursors must undergo an
      * endian conversion prior to use
-     \note
-
-     XXX Umm, it'd be helpful to know what we're swapping from and to.
-     XXX Presumably this means swapping from big-endian (network) byte order
-     XXX to little-endian; but the inverse transaction is possible, too, and
-     XXX that's not reflected in this variable
+     * \note
+     *
+     * XXX Umm, it'd be helpful to know what we're swapping from and to.
+     * XXX Presumably this means swapping from big-endian (network) byte order
+     * XXX to little-endian; but the inverse transaction is possible, too, and
+     * XXX that's not reflected in this variable
      */
     bool mSwapEndian;
     void deduceEndian();

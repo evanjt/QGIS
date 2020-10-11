@@ -74,7 +74,7 @@ class GUI_EXPORT QgsNewHttpConnection : public QDialog, private Ui::QgsNewHttpCo
                           QgsNewHttpConnection::ConnectionTypes types = ConnectionWms,
                           const QString &baseKey = "qgis/connections-wms/",
                           const QString &connectionName = QString(),
-                          QgsNewHttpConnection::Flags flags = nullptr,
+                          QgsNewHttpConnection::Flags flags = QgsNewHttpConnection::Flags(),
                           Qt::WindowFlags fl = QgsGuiUtils::ModalDialogFlags );
 
     /**
@@ -102,6 +102,16 @@ class GUI_EXPORT QgsNewHttpConnection : public QDialog, private Ui::QgsNewHttpCo
     void wfsFeaturePagingStateChanged( int state );
 
   protected:
+
+    //! Index of wfsVersionComboBox
+    enum WfsVersionIndex
+    {
+      WFS_VERSION_MAX = 0,
+      WFS_VERSION_1_0 = 1,
+      WFS_VERSION_1_1 = 2,
+      WFS_VERSION_2_0 = 3,
+      WFS_VERSION_API_FEATURES_1_0 = 4,
+    };
 
     /**
      * Returns TRUE if dialog settings are valid, or FALSE if current

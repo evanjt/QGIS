@@ -22,15 +22,33 @@
 #include "qgsxyzconnectiondialog.h"
 #include "qgsxyzconnection.h"
 #include "qgsmanageconnectionsdialog.h"
+#include "qgswmssourceselect.h"
 
 #include <QFileDialog>
 #include <QMessageBox>
 
+static QWidget *_paramWidget( QgsDataItem *root )
+{
+  if ( qobject_cast<QgsWMSRootItem *>( root ) != nullptr )
+  {
+    return new QgsWMSSourceSelect( nullptr, Qt::WindowFlags(), QgsProviderRegistry::WidgetMode::Manager );
+  }
+  else
+  {
+    return nullptr;
+  }
+}
 
 void QgsWmsDataItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *menu, const QList<QgsDataItem *> &, QgsDataItemGuiContext )
 {
   if ( QgsWMSConnectionItem *connItem = qobject_cast< QgsWMSConnectionItem * >( item ) )
   {
+    QAction *actionRefresh = new QAction( tr( "Refresh" ), this );
+    connect( actionRefresh, &QAction::triggered, this, [connItem] { refreshConnection( connItem ); } );
+    menu->addAction( actionRefresh );
+
+    menu->addSeparator();
+
     QAction *actionEdit = new QAction( tr( "Edit…" ), this );
     connect( actionEdit, &QAction::triggered, this, [connItem] { editConnection( connItem ); } );
     menu->addAction( actionEdit );
@@ -40,12 +58,25 @@ void QgsWmsDataItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *m
     menu->addAction( actionDelete );
   }
 
-  if ( QgsWMSRootItem *wmsRootItem = qobject_cast< QgsWMSRootItem * >( item ) )
+  if ( QgsWMSRootItem *rootItem = qobject_cast< QgsWMSRootItem * >( item ) )
   {
     QAction *actionNew = new QAction( tr( "New Connection…" ), this );
-    connect( actionNew, &QAction::triggered, this, [wmsRootItem] { newConnection( wmsRootItem ); } );
+    connect( actionNew, &QAction::triggered, this, [rootItem] { newConnection( rootItem ); } );
     menu->addAction( actionNew );
+
+    QAction *actionSaveServers = new QAction( tr( "Save Connections…" ), this );
+    connect( actionSaveServers, &QAction::triggered, this, [] { saveConnections(); } );
+    menu->addAction( actionSaveServers );
+
+    QAction *actionLoadServers = new QAction( tr( "Load Connections…" ), this );
+    connect( actionLoadServers, &QAction::triggered, this, [rootItem] { loadConnections( rootItem ); } );
+    menu->addAction( actionLoadServers );
   }
+}
+
+QWidget *QgsWmsDataItemGuiProvider::createParamWidget( QgsDataItem *root, QgsDataItemGuiContext )
+{
+  return _paramWidget( root );
 }
 
 void QgsWmsDataItemGuiProvider::editConnection( QgsDataItem *item )
@@ -80,6 +111,31 @@ void QgsWmsDataItemGuiProvider::newConnection( QgsDataItem *item )
   }
 }
 
+void QgsWmsDataItemGuiProvider::refreshConnection( QgsDataItem *item )
+{
+  // Updating the item and its children only
+  item->refresh();
+}
+
+void QgsWmsDataItemGuiProvider::saveConnections()
+{
+  QgsManageConnectionsDialog dlg( nullptr, QgsManageConnectionsDialog::Export, QgsManageConnectionsDialog::WMS );
+  dlg.exec();
+}
+
+void QgsWmsDataItemGuiProvider::loadConnections( QgsDataItem *item )
+{
+  QString fileName = QFileDialog::getOpenFileName( nullptr, tr( "Load Connections" ), QDir::homePath(),
+                     tr( "XML files (*.xml *.XML)" ) );
+  if ( fileName.isEmpty() )
+  {
+    return;
+  }
+
+  QgsManageConnectionsDialog dlg( nullptr, QgsManageConnectionsDialog::Import, QgsManageConnectionsDialog::WMS, fileName );
+  if ( dlg.exec() == QDialog::Accepted )
+    item->refreshConnections();
+}
 
 // -----------
 
@@ -111,6 +167,11 @@ void QgsXyzDataItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *m
     connect( actionLoadXyzTilesServers, &QAction::triggered, this, [rootItem] { loadXyzTilesServers( rootItem ); } );
     menu->addAction( actionLoadXyzTilesServers );
   }
+}
+
+QWidget *QgsXyzDataItemGuiProvider::createParamWidget( QgsDataItem *root, QgsDataItemGuiContext )
+{
+  return _paramWidget( root );
 }
 
 void QgsXyzDataItemGuiProvider::editConnection( QgsDataItem *item )
@@ -163,6 +224,6 @@ void QgsXyzDataItemGuiProvider::loadXyzTilesServers( QgsDataItem *item )
   }
 
   QgsManageConnectionsDialog dlg( nullptr, QgsManageConnectionsDialog::Import, QgsManageConnectionsDialog::XyzTiles, fileName );
-  dlg.exec();
-  item->refreshConnections();
+  if ( dlg.exec() == QDialog::Accepted )
+    item->refreshConnections();
 }

@@ -36,7 +36,6 @@ from processing.tools.system import isWindows
 
 
 class PointsAlongLines(GdalAlgorithm):
-
     INPUT = 'INPUT'
     GEOMETRY = 'GEOMETRY'
     DISTANCE = 'DISTANCE'
@@ -105,7 +104,7 @@ class PointsAlongLines(GdalAlgorithm):
         for f in fields:
             if f.name() == geometry:
                 continue
-            other_fields.append(f.name())
+            other_fields.append('"{}"'.format(f.name()))
 
         if other_fields:
             other_fields = ',*'
@@ -119,7 +118,7 @@ class PointsAlongLines(GdalAlgorithm):
         arguments.append('sqlite')
         arguments.append('-sql')
 
-        sql = "SELECT ST_Line_Interpolate_Point({}, {}) AS {}{} FROM '{}'".format(geometry, distance, geometry, other_fields, layerName)
+        sql = 'SELECT ST_Line_Interpolate_Point({}, {}) AS {}{} FROM "{}"'.format(geometry, distance, geometry, other_fields, layerName)
         arguments.append(sql)
 
         if options:

@@ -32,7 +32,7 @@
 QgsFieldExpressionWidget::QgsFieldExpressionWidget( QWidget *parent )
   : QWidget( parent )
   , mExpressionDialogTitle( tr( "Expression Dialog" ) )
-  , mDa( nullptr )
+  , mDistanceArea( nullptr )
 
 {
   QHBoxLayout *layout = new QHBoxLayout( this );
@@ -112,7 +112,7 @@ void QgsFieldExpressionWidget::setLeftHandButtonStyle( bool isLeft )
 
 void QgsFieldExpressionWidget::setGeomCalculator( const QgsDistanceArea &da )
 {
-  mDa = std::shared_ptr<const QgsDistanceArea>( new QgsDistanceArea( da ) );
+  mDistanceArea = std::shared_ptr<const QgsDistanceArea>( new QgsDistanceArea( da ) );
 }
 
 QString QgsFieldExpressionWidget::currentText() const
@@ -218,6 +218,11 @@ void QgsFieldExpressionWidget::setField( const QString &fieldName )
   currentFieldChanged();
 }
 
+void QgsFieldExpressionWidget::setFields( const QgsFields &fields )
+{
+  mFieldProxyModel->sourceFieldModel()->setFields( fields );
+}
+
 void QgsFieldExpressionWidget::setExpression( const QString &expression )
 {
   setField( expression );
@@ -225,18 +230,21 @@ void QgsFieldExpressionWidget::setExpression( const QString &expression )
 
 void QgsFieldExpressionWidget::editExpression()
 {
-  QString currentExpression = currentText();
+  QString currentExpression = asExpression();
   QgsVectorLayer *vl = layer();
 
   QgsExpressionContext context = mExpressionContextGenerator ? mExpressionContextGenerator->createExpressionContext() : mExpressionContext;
 
   QgsExpressionBuilderDialog dlg( vl, currentExpression, this, QStringLiteral( "generic" ), context );
-  if ( mDa )
+  if ( mDistanceArea )
   {
-    dlg.setGeomCalculator( *mDa );
+    dlg.setGeomCalculator( *mDistanceArea );
   }
   dlg.setWindowTitle( mExpressionDialogTitle );
   dlg.setAllowEvalErrors( mAllowEvalErrors );
+
+  if ( !vl )
+    dlg.expressionBuilder()->expressionTree()->loadFieldNames( mFieldProxyModel->sourceFieldModel()->fields() );
 
   if ( dlg.exec() )
   {
@@ -323,7 +331,7 @@ void QgsFieldExpressionWidget::currentFieldChanged()
 
   // display tooltip if widget is shorter than expression
   QFontMetrics metrics( mCombo->lineEdit()->font() );
-  if ( metrics.width( fieldName ) > mCombo->lineEdit()->width() )
+  if ( metrics.boundingRect( fieldName ).width() > mCombo->lineEdit()->width() )
   {
     mCombo->setToolTip( fieldName );
   }

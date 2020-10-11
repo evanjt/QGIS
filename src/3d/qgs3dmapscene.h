@@ -20,11 +20,15 @@
 
 #include <Qt3DCore/QEntity>
 
+#include "qgsfeatureid.h"
+#include "qgsshadowrenderingframegraph.h"
+
 namespace Qt3DRender
 {
   class QRenderSettings;
   class QCamera;
   class QPickEvent;
+  class QObjectPicker;
 }
 
 namespace Qt3DLogic
@@ -35,6 +39,7 @@ namespace Qt3DLogic
 namespace Qt3DExtras
 {
   class QForwardRenderer;
+  class QSkyboxEntity;
 }
 
 class QgsAbstract3DEngine;
@@ -45,10 +50,19 @@ class Qgs3DMapScenePickHandler;
 class Qgs3DMapSettings;
 class QgsTerrainEntity;
 class QgsChunkedEntity;
+class QgsSkyboxEntity;
+class QgsSkyboxSettings;
+class Qgs3DMapExportSettings;
+class QgsShadowRenderingFrameGraph;
+class QgsPostprocessingEntity;
+
+
+#define SIP_NO_FILE
 
 /**
  * \ingroup 3d
  * Entity that encapsulates our 3D scene - contains all other entities (such as terrain) as children.
+ * \note Not available in Python bindings
  * \since QGIS 3.0
  */
 class _3D_EXPORT Qgs3DMapScene : public Qt3DCore::QEntity
@@ -68,6 +82,12 @@ class _3D_EXPORT Qgs3DMapScene : public Qt3DCore::QEntity
 
     //! Returns number of pending jobs of the terrain entity
     int terrainPendingJobsCount() const;
+
+    /**
+     * Returns number of pending jobs for all chunked entities
+     * \since QGIS 3.12
+     */
+    int totalPendingJobsCount() const;
 
     //! Enumeration of possible states of the 3D scene
     enum SceneState
@@ -90,13 +110,25 @@ class _3D_EXPORT Qgs3DMapScene : public Qt3DCore::QEntity
      */
     float worldSpaceError( float epsilon, float distance );
 
+    //! Exports the scene according to the scene export settings
+    void exportScene( const Qgs3DMapExportSettings &exportSettings );
   signals:
     //! Emitted when the current terrain entity is replaced by a new one
     void terrainEntityChanged();
     //! Emitted when the number of terrain's pending jobs changes
     void terrainPendingJobsCountChanged();
+
+    /**
+     * Emitted when the total number of pending jobs changes
+     * \since QGIS 3.12
+     */
+    void totalPendingJobsCountChanged();
     //! Emitted when the scene's state has changed
     void sceneStateChanged();
+
+  public slots:
+    //! Updates the temporale entities
+    void updateTemporal();
 
   private slots:
     void onCameraChanged();
@@ -106,10 +138,13 @@ class _3D_EXPORT Qgs3DMapScene : public Qt3DCore::QEntity
     void onLayersChanged();
     void createTerrainDeferred();
     void onBackgroundColorChanged();
-    void onLayerEntityPickEvent( Qt3DRender::QPickEvent *event );
+    void onLayerEntityPickedObject( Qt3DRender::QPickEvent *pickEvent, QgsFeatureId fid );
     void updateLights();
     void updateCameraLens();
     void onRenderersChanged();
+    void onSkyboxSettingsChanged();
+    void onShadowSettingsChanged();
+
   private:
     void addLayerEntity( QgsMapLayer *layer );
     void removeLayerEntity( QgsMapLayer *layer );
@@ -119,6 +154,7 @@ class _3D_EXPORT Qgs3DMapScene : public Qt3DCore::QEntity
     void updateScene();
     bool updateCameraNearFarPlanes();
     void finalizeNewEntity( Qt3DCore::QEntity *newEntity );
+    int maximumTextureSize() const;
 
   private:
     const Qgs3DMapSettings &mMap;
@@ -139,6 +175,10 @@ class _3D_EXPORT Qgs3DMapScene : public Qt3DCore::QEntity
     QList<Qgs3DMapScenePickHandler *> mPickHandlers;
     //! List of lights in the scene
     QList<Qt3DCore::QEntity *> mLightEntities;
+    //! List of light origins in the scene
+    QList<Qt3DCore::QEntity *> mLightOriginEntities;
+    QList<QgsMapLayer *> mModelVectorLayers;
+    QgsSkyboxEntity *mSkybox = nullptr;
 };
 
 #endif // QGS3DMAPSCENE_H

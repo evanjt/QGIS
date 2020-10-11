@@ -33,6 +33,7 @@ class QgsReadOnlyStyleModel : public QgsStyleProxyModel
     Q_OBJECT
   public:
 
+    explicit QgsReadOnlyStyleModel( QgsStyleModel *sourceModel, QObject *parent = nullptr );
     explicit QgsReadOnlyStyleModel( QgsStyle *style, QObject *parent = nullptr );
     Qt::ItemFlags flags( const QModelIndex &index ) const override;
     QVariant data( const QModelIndex &index, int role ) const override;
@@ -91,7 +92,7 @@ class GUI_EXPORT QgsStyleItemsListWidget : public QWidget, private Ui::QgsStyleI
      * Sets the layer \a type to show in the widget. Set \a type to QgsWkbTypes::UnknownGeometry if no
      * layer type filter is desired.
      *
-     * This setting only applies to label settings style entities.
+     * This setting only applies to label settings and 3d style entities.
      */
     void setLayerType( QgsWkbTypes::GeometryType type );
 

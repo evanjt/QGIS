@@ -32,6 +32,15 @@ class QgsServerOgcApiHandler;
  *
  * \code{.py}
  *
+ * class Handler1(QgsServerOgcApiHandler):
+ *   """A handler, see QgsServerOgcApiHandler for an example"""
+ *   ...
+ *
+ * h = Handler1()
+ * api = QgsServerOgcApi(serverInterface(), "/api1", "apione", "A firs API", "1.0")
+ * api.registerHandler(h)
+ * server.serverInterface().serviceRegistry().registerApi(api)
+ *
  * \endcode
  *
  * \since QGIS 3.10
@@ -72,7 +81,8 @@ class SERVER_EXPORT QgsServerOgcApi : public QgsServerApi
       GEOJSON,
       OPENAPI3, //! "application/openapi+json;version=3.0"
       JSON,
-      HTML
+      HTML,
+      XML
     };
     Q_ENUM( ContentType )
 
@@ -104,13 +114,13 @@ class SERVER_EXPORT QgsServerOgcApi : public QgsServerApi
     virtual void executeRequest( const QgsServerApiContext &context ) const override SIP_THROW( QgsServerApiBadRequestException ) SIP_VIRTUALERRORHANDLER( serverapi_badrequest_exception_handler );
 
     /**
-     * Returns a map of contentType => mime type
+     * Returns a map of contentType => list of mime types
      * \note not available in Python bindings
      */
-    static const QMap<QgsServerOgcApi::ContentType, QString> contentTypeMimes() SIP_SKIP;
+    static const QMap<QgsServerOgcApi::ContentType, QStringList> contentTypeMimes() SIP_SKIP;
 
     /**
-     * Returns contenType specializations (e.g. JSON => [GEOJSON, OPENAPI3], XML => [GML])
+     * Returns contentType specializations (e.g. JSON => [GEOJSON, OPENAPI3], XML => [GML])
      * \note not available in Python bindings
      */
     static const QHash<QgsServerOgcApi::ContentType, QList<QgsServerOgcApi::ContentType> > contentTypeAliases() SIP_SKIP;
@@ -184,10 +194,14 @@ class SERVER_EXPORT QgsServerOgcApi : public QgsServerApi
     //Note: this cannot be unique because of SIP bindings
     std::vector<std::shared_ptr<QgsServerOgcApiHandler>> mHandlers;
 
-    //! Stores content type mime strings
-    static QMap<QgsServerOgcApi::ContentType, QString> sContentTypeMime;
+    //! For each content type, stores a list of at least one content type mime strings aliases
+    static QMap<QgsServerOgcApi::ContentType, QStringList> sContentTypeMime;
 
-    //! Stores content type aliases (e.g. JSON->[GEOJSON,OPENAPI3], XML->[GML] )
+    /**
+     * Stores content type generalization aliases (e.g. JSON->[GEOJSON,OPENAPI3], XML->[GML] )
+     * We are good citizen and we accept JSON from the client (for example) if the actual type
+     * is a JSON-based format (OPENAPI3 or GEOJSON).
+     */
     static QHash<QgsServerOgcApi::ContentType, QList<QgsServerOgcApi::ContentType>> sContentTypeAliases;
 
 };

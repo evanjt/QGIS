@@ -30,7 +30,7 @@ email                : hugo dot mercier at oslandia dot com
 
 class QgsVirtualLayerFeatureIterator;
 
-class QgsVirtualLayerProvider: public QgsVectorDataProvider
+class QgsVirtualLayerProvider final: public QgsVectorDataProvider
 {
     Q_OBJECT
   public:
@@ -40,7 +40,7 @@ class QgsVirtualLayerProvider: public QgsVectorDataProvider
      * \param uri uniform resource locator (URI) for a dataset
      * \param options generic data provider options
      */
-    explicit QgsVirtualLayerProvider( QString const &uri, const ProviderOptions &coordinateTransformContext );
+    explicit QgsVirtualLayerProvider( QString const &uri, const ProviderOptions &coordinateTransformContext, QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
     QgsAbstractFeatureSource *featureSource() const override;
     QString storageType() const override;
@@ -60,7 +60,6 @@ class QgsVirtualLayerProvider: public QgsVectorDataProvider
     QgsAttributeList pkAttributeIndexes() const override;
     QSet<QgsMapLayerDependency> dependencies() const override;
     bool cancelReload() override;
-    void reloadData() override;
 
   private:
 
@@ -118,6 +117,11 @@ class QgsVirtualLayerProvider: public QgsVectorDataProvider
     bool loadSourceLayers();
     void createVirtualTable( QgsVectorLayer *vlayer, const QString &name );
 
+    /**
+     * Opens or creates file
+    */
+    void reloadProviderData() override;
+
     friend class QgsVirtualLayerFeatureSource;
 
   private slots:
@@ -125,15 +129,15 @@ class QgsVirtualLayerProvider: public QgsVectorDataProvider
 
 };
 
-class QgsVirtualLayerProviderMetadata: public QgsProviderMetadata
+class QgsVirtualLayerProviderMetadata final: public QgsProviderMetadata
 {
   public:
     QgsVirtualLayerProviderMetadata();
-    QgsVirtualLayerProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options ) override;
+    QgsVirtualLayerProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options, QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() ) override;
 };
 
 #ifdef HAVE_GUI
-class QgsVirtualLayerProviderGuiMetadata: public QgsProviderGuiMetadata
+class QgsVirtualLayerProviderGuiMetadata final: public QgsProviderGuiMetadata
 {
   public:
     QgsVirtualLayerProviderGuiMetadata();

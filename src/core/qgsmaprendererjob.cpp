@@ -16,7 +16,7 @@
 #include "qgsmaprendererjob.h"
 
 #include <QPainter>
-#include <QTime>
+#include <QElapsedTimer>
 #include <QTimer>
 #include <QtConcurrentMap>
 
@@ -31,13 +31,20 @@
 #include "qgspallabeling.h"
 #include "qgsvectorlayerrenderer.h"
 #include "qgsvectorlayer.h"
+#include "qgsvectortilelayer.h"
 #include "qgsexception.h"
 #include "qgslabelingengine.h"
 #include "qgsmaplayerlistutils.h"
 #include "qgsvectorlayerlabeling.h"
 #include "qgssettings.h"
 #include "qgsexpressioncontextutils.h"
+#include "qgssymbol.h"
 #include "qgsrenderer.h"
+#include "qgssymbollayer.h"
+#include "qgsvectorlayerutils.h"
+#include "qgssymbollayerutils.h"
+#include "qgsmaplayertemporalproperties.h"
+#include "qgsannotationlayer.h"
 
 ///@cond PRIVATE
 
@@ -71,8 +78,8 @@ QHash<QgsMapLayer *, int> QgsMapRendererJob::perLayerRenderingTime() const
   QHash<QgsMapLayer *, int> result;
   for ( auto it = mPerLayerRenderingTime.constBegin(); it != mPerLayerRenderingTime.constEnd(); ++it )
   {
-    if ( it.key() )
-      result.insert( it.key(), it.value() );
+    if ( auto &&lKey = it.key() )
+      result.insert( lKey, it.value() );
   }
   return result;
 }
@@ -89,16 +96,39 @@ bool QgsMapRendererJob::prepareLabelCache() const
   // calculate which layers will be labeled
   QSet< QgsMapLayer * > labeledLayers;
   const QList<QgsMapLayer *> layers = mSettings.layers();
-  for ( const QgsMapLayer *ml : layers )
+  for ( QgsMapLayer *ml : layers )
   {
-    QgsVectorLayer *vl = const_cast< QgsVectorLayer * >( qobject_cast<const QgsVectorLayer *>( ml ) );
-    if ( vl && QgsPalLabeling::staticWillUseLayer( vl ) )
-      labeledLayers << vl;
-    if ( vl && vl->labelsEnabled() && vl->labeling()->requiresAdvancedEffects() )
+    if ( QgsPalLabeling::staticWillUseLayer( ml ) )
+      labeledLayers << ml;
+
+    switch ( ml->type() )
     {
-      canCache = false;
-      break;
+      case QgsMapLayerType::VectorLayer:
+      {
+        QgsVectorLayer *vl = qobject_cast< QgsVectorLayer *>( ml );
+        if ( vl->labelsEnabled() && vl->labeling()->requiresAdvancedEffects() )
+        {
+          canCache = false;
+        }
+        break;
+      }
+
+      case QgsMapLayerType::VectorTileLayer:
+      {
+        // TODO -- add detection of advanced labeling effects for vector tile layers
+        break;
+      }
+
+      case QgsMapLayerType::RasterLayer:
+      case QgsMapLayerType::AnnotationLayer:
+      case QgsMapLayerType::PluginLayer:
+      case QgsMapLayerType::MeshLayer:
+        break;
     }
+
+    if ( !canCache )
+      break;
+
   }
 
   if ( mCache && mCache->hasCacheImage( LABEL_CACHE_ID ) )
@@ -106,7 +136,7 @@ bool QgsMapRendererJob::prepareLabelCache() const
     // we may need to clear label cache and re-register labeled features - check for that here
 
     // can we reuse the cached label solution?
-    bool canUseCache = canCache && mCache->dependentLayers( LABEL_CACHE_ID ).toSet() == labeledLayers;
+    bool canUseCache = canCache && qgis::listToSet( mCache->dependentLayers( LABEL_CACHE_ID ) ) == labeledLayers;
     if ( !canUseCache )
     {
       // no - participating layers have changed
@@ -119,7 +149,11 @@ bool QgsMapRendererJob::prepareLabelCache() const
 
 bool QgsMapRendererJob::reprojectToLayerExtent( const QgsMapLayer *ml, const QgsCoordinateTransform &ct, QgsRectangle &extent, QgsRectangle &r2 )
 {
-  bool split = false;
+  bool res = true;
+  // we can safely use ballpark transforms without bothering the user here -- at the likely scale of layer extents there
+  // won't be an appreciable difference, and we aren't actually transforming any rendered points here anyway (just the layer extent)
+  QgsCoordinateTransform approxTransform = ct;
+  approxTransform.setBallparkTransformsAreAppropriate( true );
 
   try
   {
@@ -135,13 +169,13 @@ bool QgsMapRendererJob::reprojectToLayerExtent( const QgsMapLayer *ml, const Qgs
 
     if ( ml->crs().isGeographic() )
     {
-      if ( ml->type() == QgsMapLayerType::VectorLayer && !ct.destinationCrs().isGeographic() )
+      if ( ml->type() == QgsMapLayerType::VectorLayer && !approxTransform.destinationCrs().isGeographic() )
       {
         // if we transform from a projected coordinate system check
         // check if transforming back roughly returns the input
         // extend - otherwise render the world.
-        QgsRectangle extent1 = ct.transformBoundingBox( extent, QgsCoordinateTransform::ReverseTransform );
-        QgsRectangle extent2 = ct.transformBoundingBox( extent1, QgsCoordinateTransform::ForwardTransform );
+        QgsRectangle extent1 = approxTransform.transformBoundingBox( extent, QgsCoordinateTransform::ReverseTransform );
+        QgsRectangle extent2 = approxTransform.transformBoundingBox( extent1, QgsCoordinateTransform::ForwardTransform );
 
         QgsDebugMsgLevel( QStringLiteral( "\n0:%1 %2x%3\n1:%4\n2:%5 %6x%7 (w:%8 h:%9)" )
                           .arg( extent.toString() ).arg( extent.width() ).arg( extent.height() )
@@ -150,29 +184,34 @@ bool QgsMapRendererJob::reprojectToLayerExtent( const QgsMapLayer *ml, const Qgs
                           .arg( std::fabs( 1.0 - extent2.height() / extent.height() ) )
                           , 3 );
 
-        if ( std::fabs( 1.0 - extent2.width() / extent.width() ) < 0.5 &&
-             std::fabs( 1.0 - extent2.height() / extent.height() ) < 0.5 )
+        // can differ by a maximum of up to 20% of height/width
+        if ( qgsDoubleNear( extent2.xMinimum(), extent.xMinimum(), extent.width() * 0.2 )
+             && qgsDoubleNear( extent2.xMaximum(), extent.xMaximum(), extent.width() * 0.2 )
+             && qgsDoubleNear( extent2.yMinimum(), extent.yMinimum(), extent.height() * 0.2 )
+             && qgsDoubleNear( extent2.yMaximum(), extent.yMaximum(), extent.height() * 0.2 )
+           )
         {
           extent = extent1;
         }
         else
         {
           extent = QgsRectangle( -180.0, -90.0, 180.0, 90.0 );
+          res = false;
         }
       }
       else
       {
         // Note: ll = lower left point
-        QgsPointXY ll = ct.transform( extent.xMinimum(), extent.yMinimum(),
-                                      QgsCoordinateTransform::ReverseTransform );
+        QgsPointXY ll = approxTransform.transform( extent.xMinimum(), extent.yMinimum(),
+                        QgsCoordinateTransform::ReverseTransform );
 
         //   and ur = upper right point
-        QgsPointXY ur = ct.transform( extent.xMaximum(), extent.yMaximum(),
-                                      QgsCoordinateTransform::ReverseTransform );
+        QgsPointXY ur = approxTransform.transform( extent.xMaximum(), extent.yMaximum(),
+                        QgsCoordinateTransform::ReverseTransform );
 
         QgsDebugMsgLevel( QStringLiteral( "in:%1 (ll:%2 ur:%3)" ).arg( extent.toString(), ll.toString(), ur.toString() ), 4 );
 
-        extent = ct.transformBoundingBox( extent, QgsCoordinateTransform::ReverseTransform );
+        extent = approxTransform.transformBoundingBox( extent, QgsCoordinateTransform::ReverseTransform );
 
         QgsDebugMsgLevel( QStringLiteral( "out:%1 (w:%2 h:%3)" ).arg( extent.toString() ).arg( extent.width() ).arg( extent.height() ), 4 );
 
@@ -186,6 +225,7 @@ bool QgsMapRendererJob::reprojectToLayerExtent( const QgsMapLayer *ml, const Qgs
           // for rendering, labeling and caching as everything is rendered just in one go
           extent.setXMinimum( -SPLIT_COORD );
           extent.setXMaximum( SPLIT_COORD );
+          res = false;
         }
       }
 
@@ -196,27 +236,59 @@ bool QgsMapRendererJob::reprojectToLayerExtent( const QgsMapLayer *ml, const Qgs
     }
     else // can't cross 180
     {
-      if ( ct.destinationCrs().isGeographic() &&
+      if ( approxTransform.destinationCrs().isGeographic() &&
            ( extent.xMinimum() <= -180 || extent.xMaximum() >= 180 ||
              extent.yMinimum() <= -90 || extent.yMaximum() >= 90 ) )
         // Use unlimited rectangle because otherwise we may end up transforming wrong coordinates.
         // E.g. longitude -200 to +160 would be understood as +40 to +160 due to periodicity.
         // We could try to clamp coords to (-180,180) for lon resp. (-90,90) for lat,
         // but this seems like a safer choice.
+      {
         extent = QgsRectangle( std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max() );
+        res = false;
+      }
       else
-        extent = ct.transformBoundingBox( extent, QgsCoordinateTransform::ReverseTransform );
+        extent = approxTransform.transformBoundingBox( extent, QgsCoordinateTransform::ReverseTransform );
     }
   }
-  catch ( QgsCsException &cse )
+  catch ( QgsCsException & )
   {
-    Q_UNUSED( cse )
     QgsDebugMsg( QStringLiteral( "Transform error caught" ) );
     extent = QgsRectangle( std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max() );
-    r2     = QgsRectangle( std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max() );
+    r2 = QgsRectangle( std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max() );
+    res = false;
   }
 
-  return split;
+  return res;
+}
+
+QImage *QgsMapRendererJob::allocateImage( QString layerId )
+{
+  QImage *image = new QImage( mSettings.deviceOutputSize(),
+                              mSettings.outputImageFormat() );
+  image->setDevicePixelRatio( static_cast<qreal>( mSettings.devicePixelRatio() ) );
+  if ( image->isNull() )
+  {
+    mErrors.append( Error( layerId, tr( "Insufficient memory for image %1x%2" ).arg( mSettings.outputSize().width() ).arg( mSettings.outputSize().height() ) ) );
+    delete image;
+    return nullptr;
+  }
+  return image;
+}
+
+QPainter *QgsMapRendererJob::allocateImageAndPainter( QString layerId, QImage *&image )
+{
+  QPainter *painter = nullptr;
+  image = allocateImage( layerId );
+  if ( image )
+  {
+    painter = new QPainter( image );
+    painter->setRenderHint( QPainter::Antialiasing, mSettings.testFlag( QgsMapSettings::Antialiasing ) );
+#if QT_VERSION >= QT_VERSION_CHECK(5, 13, 0)
+    painter->setRenderHint( QPainter::LosslessImageRendering, mSettings.testFlag( QgsMapSettings::LosslessImageRendering ) );
+#endif
+  }
+  return painter;
 }
 
 LayerRenderJobs QgsMapRendererJob::prepareJobs( QPainter *painter, QgsLabelingEngine *labelingEngine2, bool deferredPainterSet )
@@ -261,14 +333,21 @@ LayerRenderJobs QgsMapRendererJob::prepareJobs( QPainter *painter, QgsLabelingEn
       continue;
     }
 
+    if ( mSettings.isTemporal() && ml->temporalProperties() && !ml->temporalProperties()->isVisibleInTemporalRange( mSettings.temporalRange() ) )
+    {
+      QgsDebugMsgLevel( QStringLiteral( "Layer not rendered because it is not visible within the map's time range" ), 3 );
+      continue;
+    }
+
     QgsRectangle r1 = mSettings.visibleExtent(), r2;
     r1.grow( mSettings.extentBuffer() );
     QgsCoordinateTransform ct;
 
     ct = mSettings.layerTransform( ml );
+    bool haveExtentInLayerCrs = true;
     if ( ct.isValid() )
     {
-      reprojectToLayerExtent( ml, ct, r1, r2 );
+      haveExtentInLayerCrs = reprojectToLayerExtent( ml, ct, r1, r2 );
     }
     QgsDebugMsgLevel( "extent: " + r1.toString(), 3 );
     if ( !r1.isFinite() || !r2.isFinite() )
@@ -277,14 +356,14 @@ LayerRenderJobs QgsMapRendererJob::prepareJobs( QPainter *painter, QgsLabelingEn
       continue;
     }
 
+    QgsVectorLayer *vl = qobject_cast<QgsVectorLayer *>( ml );
+
     // Force render of layers that are being edited
     // or if there's a labeling engine that needs the layer to register features
-    if ( mCache && ml->type() == QgsMapLayerType::VectorLayer )
+    if ( mCache )
     {
-      QgsVectorLayer *vl = qobject_cast<QgsVectorLayer *>( ml );
-      bool requiresLabeling = false;
-      requiresLabeling = ( labelingEngine2 && QgsPalLabeling::staticWillUseLayer( vl ) ) && requiresLabelRedraw;
-      if ( vl->isEditable() || requiresLabeling )
+      const bool requiresLabeling = ( labelingEngine2 && QgsPalLabeling::staticWillUseLayer( ml ) ) && requiresLabelRedraw;
+      if ( ( vl && vl->isEditable() ) || requiresLabeling )
       {
         mCache->clearCacheImage( ml->id() );
       }
@@ -304,6 +383,8 @@ LayerRenderJobs QgsMapRendererJob::prepareJobs( QPainter *painter, QgsLabelingEn
     job.context.setLabelingEngine( labelingEngine2 );
     job.context.setCoordinateTransform( ct );
     job.context.setExtent( r1 );
+    if ( !haveExtentInLayerCrs )
+      job.context.setFlag( QgsRenderContext::ApplyClipAfterReprojection, true );
 
     if ( mFeatureFilterProvider )
       job.context.setFeatureFilterProvider( mFeatureFilterProvider );
@@ -314,9 +395,13 @@ LayerRenderJobs QgsMapRendererJob::prepareJobs( QPainter *painter, QgsLabelingEn
 
     job.blendMode = ml->blendMode();
     job.opacity = 1.0;
-    if ( QgsVectorLayer *vl = qobject_cast<QgsVectorLayer *>( ml ) )
+    if ( vl )
     {
       job.opacity = vl->opacity();
+    }
+    else if ( QgsAnnotationLayer *al = qobject_cast<QgsAnnotationLayer *>( ml ) )
+    {
+      job.opacity = al->opacity();
     }
 
     // if we can use the cache, let's do it and avoid rendering!
@@ -337,30 +422,192 @@ LayerRenderJobs QgsMapRendererJob::prepareJobs( QPainter *painter, QgsLabelingEn
     if ( mCache || ( !painter && !deferredPainterSet ) || needTemporaryImage( ml ) )
     {
       // Flattened image for drawing when a blending mode is set
-      QImage *mypFlattenedImage = new QImage( mSettings.deviceOutputSize(),
-                                              mSettings.outputImageFormat() );
-      mypFlattenedImage->setDevicePixelRatio( static_cast<qreal>( mSettings.devicePixelRatio() ) );
-      if ( mypFlattenedImage->isNull() )
+      job.context.setPainter( allocateImageAndPainter( ml->id(), job.img ) );
+      if ( ! job.img )
       {
-        mErrors.append( Error( ml->id(), tr( "Insufficient memory for image %1x%2" ).arg( mSettings.outputSize().width() ).arg( mSettings.outputSize().height() ) ) );
-        delete mypFlattenedImage;
         layerJobs.removeLast();
         continue;
       }
-
-      job.img = mypFlattenedImage;
-      QPainter *mypPainter = new QPainter( job.img );
-      mypPainter->setRenderHint( QPainter::Antialiasing, mSettings.testFlag( QgsMapSettings::Antialiasing ) );
-      job.context.setPainter( mypPainter );
     }
 
-    QTime layerTime;
+    QElapsedTimer layerTime;
     layerTime.start();
     job.renderer = ml->createMapRenderer( job.context );
     job.renderingTime = layerTime.elapsed(); // include job preparation time in layer rendering time
   } // while (li.hasPrevious())
 
   return layerJobs;
+}
+
+LayerRenderJobs QgsMapRendererJob::prepareSecondPassJobs( LayerRenderJobs &firstPassJobs, LabelRenderJob &labelJob )
+{
+  LayerRenderJobs secondPassJobs;
+
+  // We will need to quickly access the associated rendering job of a layer
+  QHash<QString, LayerRenderJob *> layerJobMapping;
+
+  // ... and whether a layer has a mask defined
+  QSet<QString> layerHasMask;
+
+  struct MaskSource
+  {
+    QString layerId;
+    QString labelRuleId;
+    int labelMaskId;
+    MaskSource( const QString &layerId_, const QString &labelRuleId_, int labelMaskId_ ):
+      layerId( layerId_ ), labelRuleId( labelRuleId_ ), labelMaskId( labelMaskId_ ) {}
+  };
+
+  // We collect for each layer, the set of symbol layers that will be "masked"
+  // and the list of source layers that have a mask
+  QHash<QString, QPair<QSet<QgsSymbolLayerId>, QList<MaskSource>>> maskedSymbolLayers;
+
+  for ( LayerRenderJob &job : firstPassJobs )
+  {
+    QgsVectorLayer *vl = qobject_cast<QgsVectorLayer *>( job.layer );
+    if ( ! vl )
+      continue;
+
+    layerJobMapping[job.layer->id()] = &job;
+
+    // lambda function to factor code for both label masks and symbol layer masks
+    auto collectMasks = [&]( QHash<QString, QSet<QgsSymbolLayerId>> *masks, QString sourceLayerId, QString ruleId = QString(), int labelMaskId = -1 )
+    {
+      for ( auto it = masks->begin(); it != masks->end(); ++it )
+      {
+        auto lit = maskedSymbolLayers.find( it.key() );
+        if ( lit == maskedSymbolLayers.end() )
+        {
+          maskedSymbolLayers[it.key()] = qMakePair( it.value(), QList<MaskSource>() << MaskSource( sourceLayerId, ruleId, labelMaskId ) );
+        }
+        else
+        {
+          if ( lit->first != it.value() )
+          {
+            QgsLogger::warning( QStringLiteral( "Layer %1 : Different sets of symbol layers are masked by different sources ! Only one (arbitrary) set will be retained !" ).arg( it.key() ) );
+            continue;
+          }
+          lit->second.push_back( MaskSource( sourceLayerId, ruleId, labelMaskId ) );
+        }
+      }
+      if ( ! masks->isEmpty() )
+        layerHasMask.insert( sourceLayerId );
+    };
+
+    // collect label masks
+    QHash<QString, QHash<QString, QSet<QgsSymbolLayerId>>> labelMasks = QgsVectorLayerUtils::labelMasks( vl );
+    for ( auto it = labelMasks.begin(); it != labelMasks.end(); it++ )
+    {
+      QString labelRule = it.key();
+      QHash<QString, QSet<QgsSymbolLayerId>> masks = it.value();
+
+      // group layers by QSet<QgsSymbolLayerReference>
+      QSet<QgsSymbolLayerReference> slRefs;
+      for ( auto mit = masks.begin(); mit != masks.end(); mit++ )
+      {
+        for ( auto slIt = mit.value().begin(); slIt != mit.value().end(); slIt++ )
+        {
+          slRefs.insert( QgsSymbolLayerReference( mit.key(), *slIt ) );
+        }
+      }
+      // generate a new mask id for this set
+      int labelMaskId = labelJob.maskIdProvider.insertLabelLayer( vl->id(), it.key(), slRefs );
+
+      // now collect masks
+      collectMasks( &masks, vl->id(), labelRule, labelMaskId );
+    }
+
+    // collect symbol layer masks
+    QHash<QString, QSet<QgsSymbolLayerId>> symbolLayerMasks = QgsVectorLayerUtils::symbolLayerMasks( vl );
+    collectMasks( &symbolLayerMasks, vl->id() );
+  }
+
+  if ( maskedSymbolLayers.isEmpty() )
+    return secondPassJobs;
+
+  // Now that we know some layers have a mask, we have to allocate a mask image and painter
+  // for them in the first pass job
+  for ( LayerRenderJob &job : firstPassJobs )
+  {
+    QgsMapLayer *ml = job.layer;
+
+    if ( job.img == nullptr )
+    {
+      job.context.setPainter( allocateImageAndPainter( ml->id(), job.img ) );
+    }
+    if ( layerHasMask.contains( ml->id() ) )
+    {
+      // Note: we only need an alpha channel here, rather than a full RGBA image
+      job.context.setMaskPainter( allocateImageAndPainter( ml->id(), job.maskImage ) );
+      job.maskImage->fill( 0 );
+    }
+  }
+
+  // Allocate an image for labels
+  if ( labelJob.img == nullptr )
+  {
+    labelJob.img = allocateImage( QStringLiteral( "labels" ) );
+  }
+
+  // Prepare label mask images
+  for ( int maskId = 0; maskId < labelJob.maskIdProvider.size(); maskId++ )
+  {
+    QImage *maskImage;
+    labelJob.context.setMaskPainter( allocateImageAndPainter( QStringLiteral( "label mask" ), maskImage ), maskId );
+    maskImage->fill( 0 );
+    labelJob.maskImages.push_back( maskImage );
+  }
+  labelJob.context.setMaskIdProvider( &labelJob.maskIdProvider );
+
+  // Prepare second pass jobs
+  for ( LayerRenderJob &job : firstPassJobs )
+  {
+    QgsMapLayer *ml = job.layer;
+
+    auto it = maskedSymbolLayers.find( ml->id() );
+    if ( it == maskedSymbolLayers.end() )
+      continue;
+
+    QList<MaskSource> &sourceList = it->second;
+    const QSet<QgsSymbolLayerId> &symbolList = it->first;
+
+    // copy the initial job ...
+    secondPassJobs.append( LayerRenderJob() );
+    LayerRenderJob &job2 = secondPassJobs.last();
+    job2 = job;
+    job2.cached = false;
+    job2.firstPassJob = &job;
+    QgsVectorLayer *vl1 = qobject_cast<QgsVectorLayer *>( job.layer );
+
+    // ... but clear the image
+    job2.context.setMaskPainter( nullptr );
+    job2.context.setPainter( allocateImageAndPainter( vl1->id(), job2.img ) );
+    if ( ! job2.img )
+    {
+      secondPassJobs.removeLast();
+      continue;
+    }
+
+    // Points to the first pass job. This will be needed during the second pass composition.
+    for ( MaskSource &source : sourceList )
+    {
+      if ( source.labelMaskId != -1 )
+        job2.maskJobs.push_back( qMakePair( nullptr, source.labelMaskId ) );
+      else
+        job2.maskJobs.push_back( qMakePair( layerJobMapping[source.layerId], -1 ) );
+    }
+
+    // FIXME: another possibility here, to avoid allocating a new map renderer and reuse the one from
+    // the first pass job, would be to be able to call QgsMapLayerRenderer::render() with a QgsRenderContext.
+    QgsVectorLayerRenderer *mapRenderer = static_cast<QgsVectorLayerRenderer *>( vl1->createMapRenderer( job2.context ) );
+    job2.renderer = mapRenderer;
+
+    // Modify the render context so that symbol layers get disabled as needed.
+    // The map renderer stores a reference to the context, so we can modify it even after the map renderer creation (what we need here)
+    job2.context.setDisabledSymbolLayers( QgsSymbolLayerUtils::toSymbolLayerPointers( mapRenderer->featureRenderer(), symbolList ) );
+  }
+
+  return secondPassJobs;
 }
 
 LabelRenderJob QgsMapRendererJob::prepareLabelingJob( QPainter *painter, QgsLabelingEngine *labelingEngine2, bool canUseLabelCache )
@@ -386,20 +633,7 @@ LabelRenderJob QgsMapRendererJob::prepareLabelingJob( QPainter *painter, QgsLabe
   {
     if ( canUseLabelCache && ( mCache || !painter ) )
     {
-      // Flattened image for drawing labels
-      QImage *mypFlattenedImage = nullptr;
-      mypFlattenedImage = new QImage( mSettings.deviceOutputSize(),
-                                      mSettings.outputImageFormat() );
-      mypFlattenedImage->setDevicePixelRatio( mSettings.devicePixelRatio() );
-      if ( mypFlattenedImage->isNull() )
-      {
-        mErrors.append( Error( QStringLiteral( "labels" ), tr( "Insufficient memory for label image %1x%2" ).arg( mSettings.outputSize().width() ).arg( mSettings.outputSize().height() ) ) );
-        delete mypFlattenedImage;
-      }
-      else
-      {
-        job.img = mypFlattenedImage;
-      }
+      job.img = allocateImage( QStringLiteral( "labels" ) );
     }
   }
 
@@ -427,6 +661,14 @@ void QgsMapRendererJob::cleanupJobs( LayerRenderJobs &jobs )
       job.img = nullptr;
     }
 
+    // delete the mask image and painter
+    if ( job.maskImage )
+    {
+      delete job.context.maskPainter();
+      job.context.setMaskPainter( nullptr );
+      delete job.maskImage;
+    }
+
     if ( job.renderer )
     {
       const auto constErrors = job.renderer->errors();
@@ -444,31 +686,70 @@ void QgsMapRendererJob::cleanupJobs( LayerRenderJobs &jobs )
   jobs.clear();
 }
 
+void QgsMapRendererJob::cleanupSecondPassJobs( LayerRenderJobs &jobs )
+{
+  for ( auto &job : jobs )
+  {
+    if ( job.img )
+    {
+      delete job.context.painter();
+      job.context.setPainter( nullptr );
+
+      delete job.img;
+      job.img = nullptr;
+    }
+
+    if ( job.renderer )
+    {
+      delete job.renderer;
+      job.renderer = nullptr;
+    }
+
+    if ( job.layer )
+      mPerLayerRenderingTime.insert( job.layer, job.renderingTime );
+  }
+
+  jobs.clear();
+}
+
 void QgsMapRendererJob::cleanupLabelJob( LabelRenderJob &job )
 {
   if ( job.img )
   {
     if ( mCache && !job.cached && !job.context.renderingStopped() )
     {
-      QgsDebugMsg( QStringLiteral( "caching label result image" ) );
+      QgsDebugMsgLevel( QStringLiteral( "caching label result image" ), 2 );
       mCache->setCacheImage( LABEL_CACHE_ID, *job.img, _qgis_listQPointerToRaw( job.participatingLayers ) );
     }
 
     delete job.img;
     job.img = nullptr;
   }
+
+  for ( int maskId = 0; maskId < job.maskImages.size(); maskId++ )
+  {
+    delete job.context.maskPainter( maskId );
+    job.context.setMaskPainter( nullptr, maskId );
+    delete job.maskImages[maskId];
+  }
 }
 
+
+#define DEBUG_RENDERING 0
 
 QImage QgsMapRendererJob::composeImage( const QgsMapSettings &settings, const LayerRenderJobs &jobs, const LabelRenderJob &labelJob )
 {
   QImage image( settings.deviceOutputSize(), settings.outputImageFormat() );
   image.setDevicePixelRatio( settings.devicePixelRatio() );
+  image.setDotsPerMeterX( static_cast<int>( settings.outputDpi() * 39.37 ) );
+  image.setDotsPerMeterY( static_cast<int>( settings.outputDpi() * 39.37 ) );
   image.fill( settings.backgroundColor().rgba() );
 
   QPainter painter( &image );
 
-
+#if DEBUG_RENDERING
+  int i = 0;
+#endif
   for ( LayerRenderJobs::const_iterator it = jobs.constBegin(); it != jobs.constEnd(); ++it )
   {
     const LayerRenderJob &job = *it;
@@ -482,6 +763,10 @@ QImage QgsMapRendererJob::composeImage( const QgsMapSettings &settings, const La
     painter.setCompositionMode( job.blendMode );
     painter.setOpacity( job.opacity );
 
+#if DEBUG_RENDERING
+    job.img->save( QString( "/tmp/final_%1.png" ).arg( i ) );
+    i++;
+#endif
     Q_ASSERT( job.img );
 
     painter.drawImage( 0, 0, *job.img );
@@ -517,10 +802,108 @@ QImage QgsMapRendererJob::composeImage( const QgsMapSettings &settings, const La
   }
 
   painter.end();
+#if DEBUG_RENDERING
+  image.save( "/tmp/final.png" );
+#endif
   return image;
 }
 
-void QgsMapRendererJob::logRenderingTime( const LayerRenderJobs &jobs, const LabelRenderJob &labelJob )
+void QgsMapRendererJob::composeSecondPass( LayerRenderJobs &secondPassJobs, LabelRenderJob &labelJob )
+{
+#if DEBUG_RENDERING
+  int i = 0;
+#endif
+  // compose the second pass with the mask
+  for ( LayerRenderJob &job : secondPassJobs )
+  {
+#if DEBUG_RENDERING
+    i++;
+    job.img->save( QString( "/tmp/second_%1.png" ).arg( i ) );
+    int mask = 0;
+#endif
+
+    // Merge all mask images into the first one if we have more than one mask image
+    if ( job.maskJobs.size() > 1 )
+    {
+      QPainter *maskPainter = nullptr;
+      for ( QPair<LayerRenderJob *, int> p : job.maskJobs )
+      {
+        QImage *maskImage = p.first ? p.first->maskImage : labelJob.maskImages[p.second];
+#if DEBUG_RENDERING
+        maskImage->save( QString( "/tmp/mask_%1_%2.png" ).arg( i ).arg( mask++ ) );
+#endif
+        if ( ! maskPainter )
+        {
+          maskPainter = p.first ? p.first->context.maskPainter() : labelJob.context.maskPainter( p.second );
+        }
+        else
+        {
+          maskPainter->drawImage( 0, 0, *maskImage );
+        }
+      }
+    }
+
+    if ( ! job.maskJobs.isEmpty() )
+    {
+      // All have been merged into the first
+      QPair<LayerRenderJob *, int> p = *job.maskJobs.begin();
+      QImage *maskImage = p.first ? p.first->maskImage : labelJob.maskImages[p.second];
+#if DEBUG_RENDERING
+      maskImage->save( QString( "/tmp/mask_%1.png" ).arg( i ) );
+#endif
+
+      // Only retain parts of the second rendering that are "inside" the mask image
+      QPainter *painter = job.context.painter();
+      painter->setCompositionMode( QPainter::CompositionMode_DestinationIn );
+
+      //Create an "alpha binarized" image of the maskImage to :
+      //* Eliminate antialiasing artifact
+      //* Avoid applying mask opacity to elements under the mask but not masked
+      QImage maskBinAlpha = maskImage->createMaskFromColor( 0 );
+      QVector<QRgb> mswTable;
+      mswTable.push_back( qRgba( 0, 0, 0, 255 ) );
+      mswTable.push_back( qRgba( 0, 0, 0, 0 ) );
+      maskBinAlpha.setColorTable( mswTable );
+      painter->drawImage( 0, 0, maskBinAlpha );
+#if DEBUG_RENDERING
+      job.img->save( QString( "/tmp/second_%1_a.png" ).arg( i ) );
+#endif
+
+      // Modify the first pass' image ...
+      {
+        QPainter tempPainter;
+
+        // reuse the first pass painter, if available
+        QPainter *painter1 = job.firstPassJob->context.painter();
+        if ( ! painter1 )
+        {
+          tempPainter.begin( job.firstPassJob->img );
+          painter1 = &tempPainter;
+        }
+#if DEBUG_RENDERING
+        job.firstPassJob->img->save( QString( "/tmp/second_%1_first_pass_1.png" ).arg( i ) );
+#endif
+        // ... first retain parts that are "outside" the mask image
+        painter1->setCompositionMode( QPainter::CompositionMode_DestinationOut );
+        painter1->drawImage( 0, 0, *maskImage );
+
+#if DEBUG_RENDERING
+        job.firstPassJob->img->save( QString( "/tmp/second_%1_first_pass_2.png" ).arg( i ) );
+#endif
+        // ... and overpaint the second pass' image on it
+        painter1->setCompositionMode( QPainter::CompositionMode_DestinationOver );
+        painter1->drawImage( 0, 0, *job.img );
+#if DEBUG_RENDERING
+        job.img->save( QString( "/tmp/second_%1_b.png" ).arg( i ) );
+        if ( job.firstPassJob )
+          job.firstPassJob->img->save( QString( "/tmp/second_%1_first_pass_3.png" ).arg( i ) );
+#endif
+      }
+    }
+  }
+}
+
+void QgsMapRendererJob::logRenderingTime( const LayerRenderJobs &jobs, const LayerRenderJobs &secondPassJobs, const LabelRenderJob &labelJob )
 {
   QgsSettings settings;
   if ( !settings.value( QStringLiteral( "Map/logCanvasRefreshEvent" ), false ).toBool() )
@@ -530,6 +913,9 @@ void QgsMapRendererJob::logRenderingTime( const LayerRenderJobs &jobs, const Lab
   const auto constJobs = jobs;
   for ( const LayerRenderJob &job : constJobs )
     elapsed.insert( job.renderingTime, job.layerId );
+  const auto constSecondPassJobs = secondPassJobs;
+  for ( const LayerRenderJob &job : constSecondPassJobs )
+    elapsed.insert( job.renderingTime, job.layerId + QString( " (second pass)" ) );
 
   elapsed.insert( labelJob.renderingTime, tr( "Labeling" ) );
 
@@ -538,7 +924,7 @@ void QgsMapRendererJob::logRenderingTime( const LayerRenderJobs &jobs, const Lab
   const auto constTt = tt;
   for ( int t : constTt )
   {
-    QgsMessageLog::logMessage( tr( "%1 ms: %2" ).arg( t ).arg( QStringList( elapsed.values( t ) ).join( QStringLiteral( ", " ) ) ), tr( "Rendering" ) );
+    QgsMessageLog::logMessage( tr( "%1 ms: %2" ).arg( t ).arg( QStringList( elapsed.values( t ) ).join( QLatin1String( ", " ) ) ), tr( "Rendering" ) );
   }
   QgsMessageLog::logMessage( QStringLiteral( "---" ), tr( "Rendering" ) );
 }
@@ -574,8 +960,22 @@ bool QgsMapRendererJob::needTemporaryImage( QgsMapLayer *ml )
     }
 
     case QgsMapLayerType::MeshLayer:
+    case QgsMapLayerType::VectorTileLayer:
     case QgsMapLayerType::PluginLayer:
       break;
+
+    case QgsMapLayerType::AnnotationLayer:
+    {
+      QgsAnnotationLayer *al = qobject_cast<QgsAnnotationLayer *>( ml );
+      if ( mSettings.testFlag( QgsMapSettings::UseAdvancedEffects ) &&
+           ( !qgsDoubleNear( al->opacity(), 1.0 ) ) )
+      {
+        //layer properties require rasterization
+        return true;
+      }
+      break;
+    }
+
   }
 
   return false;
@@ -585,7 +985,7 @@ void QgsMapRendererJob::drawLabeling( QgsRenderContext &renderContext, QgsLabeli
 {
   QgsDebugMsgLevel( QStringLiteral( "Draw labeling start" ), 5 );
 
-  QTime t;
+  QElapsedTimer t;
   t.start();
 
   // Reset the composition mode before rendering the labels
@@ -598,7 +998,7 @@ void QgsMapRendererJob::drawLabeling( QgsRenderContext &renderContext, QgsLabeli
     labelingEngine2->run( renderContext );
   }
 
-  QgsDebugMsg( QStringLiteral( "Draw labeling took (seconds): %1" ).arg( t.elapsed() / 1000. ) );
+  QgsDebugMsgLevel( QStringLiteral( "Draw labeling took (seconds): %1" ).arg( t.elapsed() / 1000. ), 2 );
 }
 
 void QgsMapRendererJob::drawLabeling( const QgsMapSettings &settings, QgsRenderContext &renderContext, QgsLabelingEngine *labelingEngine2, QPainter *painter )

@@ -29,6 +29,7 @@
 #include "qgsproject.h"
 #include "qgscoordinateutils.h"
 #include "qgsvectorlayer.h"
+#include "qgsvectorlayerjoininfo.h"
 
 
 QgsStatusBarCoordinatesWidget::QgsStatusBarCoordinatesWidget( QWidget *parent )
@@ -36,7 +37,7 @@ QgsStatusBarCoordinatesWidget::QgsStatusBarCoordinatesWidget( QWidget *parent )
   , mMousePrecisionDecimalPlaces( 0 )
 {
   // calculate the size of two chars
-  mTwoCharSize = fontMetrics().width( QStringLiteral( "OO" ) );
+  mTwoCharSize = fontMetrics().boundingRect( 'O' ).width();
   mMinimumWidth = mTwoCharSize * 4;
 
   // add a label to show current position
@@ -127,6 +128,10 @@ void QgsStatusBarCoordinatesWidget::validateCoordinates()
   {
     hackfests();
   }
+  else if ( mLineEdit->text() == QLatin1String( "user groups" ) )
+  {
+    userGroups();
+  }
   else if ( mLineEdit->text() == QLatin1String( "dizzy" ) )
   {
     // sometimes you may feel a bit dizzy...
@@ -148,7 +153,7 @@ void QgsStatusBarCoordinatesWidget::validateCoordinates()
     refreshMapCanvas();
     return;
   }
-  else if ( mLineEdit->text() == QStringLiteral( "bored" ) )
+  else if ( mLineEdit->text() == QLatin1String( "bored" ) )
   {
     // it's friday afternoon and too late to start another piece of work...
     emit weAreBored();
@@ -227,7 +232,7 @@ void QgsStatusBarCoordinatesWidget::world()
   {
     return;
   }
-  QString fileName = QgsApplication::pkgDataPath() + QStringLiteral( "/resources/data/world_map.shp" );
+  QString fileName = QgsApplication::pkgDataPath() + QStringLiteral( "/resources/data/world_map.gpkg|layername=countries" );
   QFileInfo fileInfo = QFileInfo( fileName );
   const QgsVectorLayer::LayerOptions options { QgsProject::instance()->transformContext() };
   QgsVectorLayer *layer = new QgsVectorLayer( fileInfo.absoluteFilePath(),
@@ -253,6 +258,42 @@ void QgsStatusBarCoordinatesWidget::hackfests()
   layer->setAutoRefreshEnabled( true );
 }
 
+void QgsStatusBarCoordinatesWidget::userGroups()
+{
+  if ( !mMapCanvas )
+  {
+    return;
+  }
+  QString fileName = QgsApplication::pkgDataPath() + QStringLiteral( "/resources/data/world_map.gpkg|layername=countries" );
+  QFileInfo fileInfo = QFileInfo( fileName );
+  const QgsVectorLayer::LayerOptions options { QgsProject::instance()->transformContext() };
+  QgsVectorLayer *layer = new QgsVectorLayer( fileInfo.absoluteFilePath(),
+      tr( "User Groups" ), QStringLiteral( "ogr" ), options );
+
+  QString fileNameData = QgsApplication::pkgDataPath() + QStringLiteral( "/resources/data/user_groups_data.json" );
+  QFileInfo fileInfoData = QFileInfo( fileNameData );
+  QgsVectorLayer *layerData = new QgsVectorLayer( fileInfoData.absoluteFilePath(),
+      tr( "user_groups_data" ), QStringLiteral( "ogr" ), options );
+
+  // Register layers with the layers registry
+  QgsProject::instance()->addMapLayers( QList<QgsMapLayer *>() << layer << layerData );
+
+  // Create join
+  QgsVectorLayerJoinInfo joinInfo;
+  joinInfo.setTargetFieldName( QStringLiteral( "iso_a2" ) );
+  joinInfo.setJoinLayer( layerData );
+  joinInfo.setJoinFieldName( QStringLiteral( "country" ) );
+  joinInfo.setUsingMemoryCache( true );
+  joinInfo.setPrefix( QStringLiteral( "ug_" ) );
+  joinInfo.setJoinFieldNamesSubset( nullptr );  // Use all join fields
+  layer->addJoin( joinInfo );
+
+  // Load QML for polygon symbology and maptips
+  QString fileNameStyle = QgsApplication::pkgDataPath() + QStringLiteral( "/resources/data/user_groups.qml" );
+  bool styleFlag = false;
+  layer->loadNamedStyle( fileNameStyle, styleFlag, true );
+}
+
 void QgsStatusBarCoordinatesWidget::extentsViewToggled( bool flag )
 {
   if ( flag )
@@ -269,7 +310,7 @@ void QgsStatusBarCoordinatesWidget::extentsViewToggled( bool flag )
     mToggleExtentsViewButton->setIcon( QgsApplication::getThemeIcon( QStringLiteral( "tracking.svg" ) ) );
     mLineEdit->setToolTip( tr( "Map coordinates at mouse cursor position" ) );
     mLineEdit->setReadOnly( false );
-    mLabel->setText( tr( "Coordinate:" ) );
+    mLabel->setText( tr( "Coordinate" ) );
   }
 }
 
@@ -306,7 +347,7 @@ void QgsStatusBarCoordinatesWidget::showExtent()
 
   // update the statusbar with the current extents.
   QgsRectangle myExtents = mMapCanvas->extent();
-  mLabel->setText( tr( "Extents:" ) );
+  mLabel->setText( tr( "Extents" ) );
   mLineEdit->setText( myExtents.toString( true ) );
 
   ensureCoordinatesVisible();
@@ -316,7 +357,7 @@ void QgsStatusBarCoordinatesWidget::ensureCoordinatesVisible()
 {
 
   //ensure the label is big (and small) enough
-  int width = std::max( mLineEdit->fontMetrics().width( mLineEdit->text() ) + 16, mMinimumWidth );
+  int width = std::max( mLineEdit->fontMetrics().boundingRect( mLineEdit->text() ).width() + 16, mMinimumWidth );
   if ( mLineEdit->minimumWidth() < width || ( mLineEdit->minimumWidth() - width ) > mTwoCharSize )
   {
     mLineEdit->setMinimumWidth( width );

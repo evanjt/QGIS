@@ -25,6 +25,15 @@ import QgsQuick 0.1 as QgsQuick
  */
 Item {
   signal valueChanged(var value, bool isNull)
+  property var fieldName: field.name
+
+  function itemSelected( index ) {
+    combobox.itemClicked( index )
+  }
+
+  function openCombobox() {
+    combobox.popup.open()
+  }
 
   id: fieldItem
   enabled: !readOnly
@@ -36,43 +45,44 @@ Item {
   }
 
   QgsQuick.EditorWidgetComboBox {
-    // Value relation cache map
-    property var currentMap
-    // Reversed to currentMap. It is used to find key (currentValue) according value (currentText)
-    property var reversedMap: ({})
-    property var currentValue: value
+    id: combobox
+    property var currentEditorValue: value
 
     comboStyle: customStyle.fields
-    textRole: 'text'
+    textRole: 'FeatureTitle'
     height: parent.height
-    model: ListModel {
-      id: listModel
+
+    model: QgsQuick.FeaturesListModel {
+      id: vrModel
+
+      // recalculate index when model changes
+      onModelReset: {
+        combobox.currentIndex = vrModel.rowFromAttribute( QgsQuick.FeaturesListModel.KeyColumn, value )
+      }
     }
 
     Component.onCompleted: {
-      currentMap = QgsQuick.Utils.createValueRelationCache(config)
-      var valueInKeys = false
-      var keys = Object.keys(currentMap)
-      for(var i=0; i< keys.length; i++)
+        vrModel.setupValueRelation( config )
+        currentIndex = vrModel.rowFromAttribute( QgsQuick.FeaturesListModel.KeyColumn, value )
+    }
+
+    onPressedChanged: {
+      if( pressed )
       {
-        var currentKey = keys[i]
-        if (value == currentKey) valueInKeys = true
-        var valueText = currentMap[currentKey]
-        listModel.append( { text: valueText } )
-        reversedMap[valueText] = currentKey;
+        customWidget.valueRelationOpened( fieldItem, vrModel )
+        pressed = false // we close combobox and let custom handler react, it can open combobox via openCombobox()
       }
-      model = listModel
-      currentIndex = valueInKeys ? find(currentMap[value]) : -1
     }
 
-    onCurrentTextChanged: {
-      valueChanged(reversedMap[currentText], false)
+    // Called when user makes selection in the combo box
+    onItemClicked: {
+        currentIndex = vrModel.rowFromAttribute( QgsQuick.FeaturesListModel.FeatureId, index )
+        valueChanged( vrModel.keyFromAttribute( QgsQuick.FeaturesListModel.FeatureId, index ), false )
     }
 
-    // Workaround to get a signal when the value has changed
-    onCurrentValueChanged: {
-      currentIndex = currentMap ? find(currentMap[value]) : -1
+    // Called when the same form is used for a different feature
+    onCurrentEditorValueChanged: {
+        currentIndex = vrModel.rowFromAttribute( QgsQuick.FeaturesListModel.KeyColumn, value );
     }
-
   }
 }

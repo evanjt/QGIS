@@ -72,6 +72,7 @@
 #include "qgsvaliditycheckresultswidget.h"
 #include "qgsabstractvaliditycheck.h"
 #include "qgsvaliditycheckcontext.h"
+#include "qgsprojectviewsettings.h"
 #include "ui_defaults.h"
 
 #include <QShortcut>
@@ -90,6 +91,8 @@
 #include <QPageSetupDialog>
 #include <QWidgetAction>
 #include <QProgressBar>
+#include <QClipboard>
+
 #ifdef Q_OS_MACX
 #include <ApplicationServices/ApplicationServices.h>
 #endif
@@ -97,9 +100,7 @@
 #ifdef ENABLE_MODELTEST
 #include "modeltest.h"
 #endif
-
-//add some nice zoom levels for zoom comboboxes
-QList<double> QgsLayoutDesignerDialog::sStatusZoomLevelsList { 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0};
+#include <QGlobalStatic>
 #define FIT_LAYOUT -101
 #define FIT_LAYOUT_WIDTH -102
 
@@ -143,6 +144,11 @@ void QgsAppLayoutDesignerInterface::selectItems( const QList<QgsLayoutItem *> &i
 void QgsAppLayoutDesignerInterface::setAtlasPreviewEnabled( bool enabled )
 {
   mDesigner->setAtlasPreviewEnabled( enabled );
+}
+
+void QgsAppLayoutDesignerInterface::setAtlasFeature( const QgsFeature &feature )
+{
+  mDesigner->setAtlasFeature( feature );
 }
 
 bool QgsAppLayoutDesignerInterface::atlasPreviewEnabled() const
@@ -247,11 +253,37 @@ void QgsAppLayoutDesignerInterface::showRulers( bool visible )
   mDesigner->showRulers( visible );
 }
 
-
 static bool cmpByText_( QAction *a, QAction *b )
 {
   return QString::localeAwareCompare( a->text(), b->text() ) < 0;
 }
+
+
+class QgsAtlasExportGuard
+{
+  public:
+
+    QgsAtlasExportGuard( QgsLayoutDesignerDialog *dialog )
+      : mDialog( dialog )
+    {
+      mDialog->mIsExportingAtlas = true;
+    }
+
+    ~QgsAtlasExportGuard()
+    {
+      mDialog->mIsExportingAtlas = false;
+
+      // need to update the GUI to reflect the final atlas feature
+      if ( mDialog->currentLayout() )
+      {
+        mDialog->atlasFeatureChanged( mDialog->currentLayout()->reportContext().feature() );
+      }
+    }
+
+  private:
+    QgsLayoutDesignerDialog *mDialog = nullptr;
+
+};
 
 
 QgsLayoutDesignerDialog::QgsLayoutDesignerDialog( QWidget *parent, Qt::WindowFlags flags )
@@ -275,13 +307,13 @@ QgsLayoutDesignerDialog::QgsLayoutDesignerDialog( QWidget *parent, Qt::WindowFla
   setAttribute( Qt::WA_DeleteOnClose );
   setDockOptions( dockOptions() | QMainWindow::GroupedDragging );
 
+  QgsGui::enableAutoGeometryRestore( this );
+
   //create layout view
   QGridLayout *viewLayout = new QGridLayout();
   viewLayout->setSpacing( 0 );
-  viewLayout->setMargin( 0 );
   viewLayout->setContentsMargins( 0, 0, 0, 0 );
   centralWidget()->layout()->setSpacing( 0 );
-  centralWidget()->layout()->setMargin( 0 );
   centralWidget()->layout()->setContentsMargins( 0, 0, 0, 0 );
 
   mMessageBar = new QgsMessageBar( centralWidget() );
@@ -435,16 +467,30 @@ QgsLayoutDesignerDialog::QgsLayoutDesignerDialog( QWidget *parent, Qt::WindowFla
   resizeToolButton->setDefaultAction( mActionResizeNarrowest );
   mActionsToolbar->addWidget( resizeToolButton );
 
-  QToolButton *atlasExportToolButton = new QToolButton( mAtlasToolbar );
-  atlasExportToolButton->setIcon( QgsApplication::getThemeIcon( QStringLiteral( "mActionExport.svg" ) ) );
-  atlasExportToolButton->setPopupMode( QToolButton::InstantPopup );
-  atlasExportToolButton->setAutoRaise( true );
-  atlasExportToolButton->setToolButtonStyle( Qt::ToolButtonIconOnly );
-  atlasExportToolButton->addAction( mActionExportAtlasAsImage );
-  atlasExportToolButton->addAction( mActionExportAtlasAsSVG );
-  atlasExportToolButton->addAction( mActionExportAtlasAsPDF );
-  atlasExportToolButton->setToolTip( tr( "Export Atlas" ) );
-  mAtlasToolbar->insertWidget( mActionAtlasSettings, atlasExportToolButton );
+  QToolButton *bt = new QToolButton( mAtlasToolbar );
+  bt->setPopupMode( QToolButton::MenuButtonPopup );
+  bt->addAction( mActionExportAtlasAsImage );
+  bt->addAction( mActionExportAtlasAsSVG );
+  bt->addAction( mActionExportAtlasAsPDF );
+
+  QAction *defAtlasExportAction = mActionExportAtlasAsImage;
+  switch ( settings.value( QStringLiteral( "LayoutDesigner/atlasExportAction" ), 0 ).toInt() )
+  {
+    case 0:
+      defAtlasExportAction = mActionExportAtlasAsImage;
+      break;
+    case 1:
+      defAtlasExportAction = mActionExportAtlasAsSVG;
+      break;
+    case 2:
+      defAtlasExportAction = mActionExportAtlasAsPDF;
+      break;
+  }
+  bt->setDefaultAction( defAtlasExportAction );
+  QAction *atlasExportAction = mAtlasToolbar->insertWidget( mActionAtlasSettings, bt );
+  atlasExportAction->setObjectName( QStringLiteral( "AtlasExport" ) );
+  connect( bt, &QToolButton::triggered, this, &QgsLayoutDesignerDialog::toolButtonActionTriggered );
+
   mAtlasPageComboBox = new QComboBox();
   mAtlasPageComboBox->setEditable( true );
   mAtlasPageComboBox->addItem( QString::number( 1 ) );
@@ -716,8 +762,7 @@ QgsLayoutDesignerDialog::QgsLayoutDesignerDialog( QWidget *parent, Qt::WindowFla
   QValidator *zoomValidator = new QRegularExpressionValidator( zoomRx, mStatusZoomCombo );
   mStatusZoomCombo->lineEdit()->setValidator( zoomValidator );
 
-  const auto constSStatusZoomLevelsList = sStatusZoomLevelsList;
-  for ( double level : constSStatusZoomLevelsList )
+  for ( double level : { 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0 } )
   {
     mStatusZoomCombo->insertItem( 0, tr( "%1%" ).arg( level * 100.0, 0, 'f', 1 ), level );
   }
@@ -768,7 +813,11 @@ QgsLayoutDesignerDialog::QgsLayoutDesignerDialog( QWidget *parent, Qt::WindowFla
   mMenuProvider = new QgsLayoutAppMenuProvider( this );
   mView->setMenuProvider( mMenuProvider );
 
+#if QT_VERSION < QT_VERSION_CHECK(5, 11, 0)
   int minDockWidth( fontMetrics().width( QStringLiteral( "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" ) ) );
+#else
+  int minDockWidth = fontMetrics().horizontalAdvance( 'X' ) * 38;
+#endif
 
   setTabPosition( Qt::AllDockWidgetAreas, QTabWidget::North );
   mGeneralDock = new QgsDockWidget( tr( "Layout" ), this );
@@ -811,7 +860,7 @@ QgsLayoutDesignerDialog::QgsLayoutDesignerDialog( QWidget *parent, Qt::WindowFla
   mPanelsMenu->addAction( mItemsDock->toggleViewAction() );
 
   //items tree widget
-  mItemsTreeView = new QgsLayoutItemsListView( mItemsDock, this );
+  mItemsTreeView = new QgsLayoutItemsListView( mItemsDock, iface() );
   mItemsDock->setWidget( mItemsTreeView );
 
   mAtlasDock = new QgsDockWidget( tr( "Atlas" ), this );
@@ -966,6 +1015,16 @@ QMenu *QgsLayoutDesignerDialog::createPopupMenu()
   return menu;
 }
 
+QgsLayoutGuideWidget *QgsLayoutDesignerDialog::guideWidget()
+{
+  return mGuideWidget;
+}
+
+void QgsLayoutDesignerDialog::showGuideDock( bool show )
+{
+  mGuideDock->setUserVisible( show );
+}
+
 QgsLayout *QgsLayoutDesignerDialog::currentLayout()
 {
   return mLayout;
@@ -980,7 +1039,6 @@ void QgsLayoutDesignerDialog::setMasterLayout( QgsMasterLayoutInterface *layout 
     connect( obj, &QObject::destroyed, this, [ = ]
   {
     this->close();
-    QgsApplication::sendPostedEvents( nullptr, QEvent::DeferredDelete );
   } );
 
   setTitle( mMasterLayout->name() );
@@ -1015,6 +1073,16 @@ void QgsLayoutDesignerDialog::setMasterLayout( QgsMasterLayoutInterface *layout 
   if ( dynamic_cast< QgsReport * >( layout ) )
   {
     createReportWidget();
+    mLayoutMenu->removeAction( mActionExportAsPDF );
+    mLayoutMenu->removeAction( mActionExportAsSVG );
+    mLayoutMenu->removeAction( mActionExportAsImage );
+    mLayoutMenu->removeAction( mActionPrint );
+    mLayoutToolbar->removeAction( mActionExportAsPDF );
+    mLayoutToolbar->removeAction( mActionExportAsSVG );
+    mLayoutToolbar->removeAction( mActionExportAsImage );
+    mLayoutToolbar->removeAction( mActionPrint );
+    // remove useless dangling separator
+    mLayoutToolbar->removeAction( mLayoutToolbar->actions().constLast() );
   }
   else
   {
@@ -1042,6 +1110,7 @@ void QgsLayoutDesignerDialog::setCurrentLayout( QgsLayout *layout )
   if ( !layout )
   {
     toggleActions( false );
+    mLayout = nullptr;
   }
   else
   {
@@ -1165,6 +1234,7 @@ void QgsLayoutDesignerDialog::showItemOptions( QgsLayoutItem *item, bool bringPa
 
   widget->setDesignerInterface( iface() );
   widget->setReportTypeString( reportTypeString() );
+  widget->setMasterLayout( mMasterLayout );
 
   if ( QgsLayoutPagePropertiesWidget *ppWidget = qobject_cast< QgsLayoutPagePropertiesWidget * >( widget.get() ) )
     connect( ppWidget, &QgsLayoutPagePropertiesWidget::pageOrientationChanged, this, &QgsLayoutDesignerDialog::pageOrientationChanged );
@@ -1448,17 +1518,25 @@ void QgsLayoutDesignerDialog::dropEvent( QDropEvent *event )
     }
   }
 
-  connect( timer, &QTimer::timeout, this, [this, timer, files]
+  QPointF layoutPoint = mView->mapToScene( mView->mapFromGlobal( mapToGlobal( event->pos() ) ) );
+
+  connect( timer, &QTimer::timeout, this, [this, timer, files, layoutPoint]
   {
     for ( const QString &file : qgis::as_const( files ) )
     {
       const QVector<QPointer<QgsLayoutCustomDropHandler >> handlers = QgisApp::instance()->customLayoutDropHandlers();
       for ( QgsLayoutCustomDropHandler *handler : handlers )
       {
+        if ( handler && handler->handleFileDrop( iface(), layoutPoint, file ) )
+        {
+          break;
+        }
+        Q_NOWARN_DEPRECATED_PUSH
         if ( handler && handler->handleFileDrop( iface(), file ) )
         {
           break;
         }
+        Q_NOWARN_DEPRECATED_POP
       }
     }
 
@@ -1533,7 +1611,7 @@ void QgsLayoutDesignerDialog::itemTypeAdded( int id )
 
   // update UI for new item type
   QAction *action = new QAction( tr( "Add %1" ).arg( name ), this );
-  action->setToolTip( tr( "Adds a new %1 to the layout" ).arg( name ) );
+  action->setToolTip( tr( "Add %1" ).arg( name ) );
   action->setCheckable( true );
   action->setData( id );
   action->setIcon( QgsGui::layoutItemGuiRegistry()->itemMetadata( id )->creationIcon() );
@@ -1803,7 +1881,7 @@ void QgsLayoutDesignerDialog::addItemsFromTemplate()
 void QgsLayoutDesignerDialog::duplicate()
 {
   QString newTitle;
-  if ( !QgisApp::instance()->uniqueLayoutTitle( this, newTitle, false, masterLayout()->layoutType(), tr( "%1 copy" ).arg( masterLayout()->name() ) ) )
+  if ( !QgisApp::instance()->uniqueLayoutTitle( this, newTitle, true, masterLayout()->layoutType(), tr( "%1 copy" ).arg( masterLayout()->name() ) ) )
   {
     return;
   }
@@ -1866,7 +1944,7 @@ void QgsLayoutDesignerDialog::renameLayout()
 {
   QString currentTitle = masterLayout()->name();
   QString newTitle;
-  if ( !QgisApp::instance()->uniqueLayoutTitle( this, newTitle, false, masterLayout()->layoutType(), currentTitle ) )
+  if ( !QgisApp::instance()->uniqueLayoutTitle( this, newTitle, true, masterLayout()->layoutType(), currentTitle ) )
   {
     return;
   }
@@ -1919,6 +1997,7 @@ void QgsLayoutDesignerDialog::print()
 
   QgsLayoutExporter::PrintExportSettings printSettings;
   printSettings.rasterizeWholeImage = mLayout->customProperty( QStringLiteral( "rasterize" ), false ).toBool();
+  printSettings.predefinedMapScales = predefinedScales();
 
   QgsProxyProgressTask *proxyTask = new QgsProxyProgressTask( tr( "Printing “%1”" ).arg( mMasterLayout->name() ) );
   QgsApplication::taskManager()->addTask( proxyTask );
@@ -2351,7 +2430,7 @@ void QgsLayoutDesignerDialog::atlasPreviewTriggered( bool checked )
 
   if ( checked )
   {
-    loadAtlasPredefinedScalesFromProject();
+    loadPredefinedScalesFromProject();
   }
 
   if ( checked )
@@ -2413,7 +2492,7 @@ void QgsLayoutDesignerDialog::atlasPageComboEditingFinished()
   else if ( page != atlas->currentFeatureNumber() + 1 )
   {
     QgisApp::instance()->mapCanvas()->stopRendering();
-    loadAtlasPredefinedScalesFromProject();
+    loadPredefinedScalesFromProject();
     atlas->seekTo( page - 1 );
   }
 }
@@ -2426,7 +2505,7 @@ void QgsLayoutDesignerDialog::atlasNext()
 
   QgisApp::instance()->mapCanvas()->stopRendering();
 
-  loadAtlasPredefinedScalesFromProject();
+  loadPredefinedScalesFromProject();
   printAtlas->next();
 }
 
@@ -2438,7 +2517,7 @@ void QgsLayoutDesignerDialog::atlasPrevious()
 
   QgisApp::instance()->mapCanvas()->stopRendering();
 
-  loadAtlasPredefinedScalesFromProject();
+  loadPredefinedScalesFromProject();
   printAtlas->previous();
 }
 
@@ -2450,7 +2529,7 @@ void QgsLayoutDesignerDialog::atlasFirst()
 
   QgisApp::instance()->mapCanvas()->stopRendering();
 
-  loadAtlasPredefinedScalesFromProject();
+  loadPredefinedScalesFromProject();
   printAtlas->first();
 }
 
@@ -2462,7 +2541,7 @@ void QgsLayoutDesignerDialog::atlasLast()
 
   QgisApp::instance()->mapCanvas()->stopRendering();
 
-  loadAtlasPredefinedScalesFromProject();
+  loadPredefinedScalesFromProject();
   printAtlas->last();
 }
 
@@ -2474,8 +2553,6 @@ void QgsLayoutDesignerDialog::printAtlas()
   QgsLayoutAtlas *printAtlas = atlas();
   if ( !printAtlas || !printAtlas->enabled() )
     return;
-
-  loadAtlasPredefinedScalesFromProject();
 
   if ( containsWmsLayers() )
   {
@@ -2507,6 +2584,7 @@ void QgsLayoutDesignerDialog::printAtlas()
 
   QgsLayoutExporter::PrintExportSettings printSettings;
   printSettings.rasterizeWholeImage = mLayout->customProperty( QStringLiteral( "rasterize" ), false ).toBool();
+  printSettings.predefinedMapScales = predefinedScales();
 
   QString error;
   std::unique_ptr< QgsFeedback > feedback = qgis::make_unique< QgsFeedback >();
@@ -2523,12 +2601,10 @@ void QgsLayoutDesignerDialog::printAtlas()
     proxyTask->setProxyProgress( progress );
 
 #ifdef Q_OS_LINUX
-    // For some reason on Windows hasPendingEvents() always return true,
-    // but one iteration is actually enough on Windows to get good interactivity
+    // One iteration is actually enough on Windows to get good interactivity
     // whereas on Linux we must allow for far more iterations.
-    // For safety limit the number of iterations
     int nIters = 0;
-    while ( QCoreApplication::hasPendingEvents() && ++nIters < 100 )
+    while ( ++nIters < 100 )
 #endif
     {
       QCoreApplication::processEvents();
@@ -2623,7 +2699,14 @@ void QgsLayoutDesignerDialog::exportAtlasToRaster()
   if ( !printAtlas || !printAtlas->enabled() )
     return;
 
-  loadAtlasPredefinedScalesFromProject();
+  if ( !printAtlas->coverageLayer() )
+  {
+    QMessageBox::warning( this, tr( "Export Atlas" ),
+                          tr( "Error: No coverage layer is set." ),
+                          QMessageBox::Ok,
+                          QMessageBox::Ok );
+    return;
+  }
 
   // else, it has an atlas to render, so a directory must first be selected
   if ( printAtlas->filenameExpression().isEmpty() )
@@ -2639,6 +2722,21 @@ void QgsLayoutDesignerDialog::exportAtlasToRaster()
     QString error;
     printAtlas->setFilenameExpression( QStringLiteral( "'output_'||@atlas_featurenumber" ), error );
   }
+  else
+  {
+    // Validate filename expression
+    QString errorString;
+    if ( ! printAtlas->setFilenameExpression( printAtlas->filenameExpression(), errorString ) )
+    {
+      QMessageBox::warning( nullptr, tr( "Export Atlas" ),
+                            tr( "Output file name expression is not valid. Canceling.\n"
+                                "Evaluation error: %1" ).arg( errorString ),
+                            QMessageBox::Ok,
+                            QMessageBox::Ok );
+      return;
+    }
+  }
+
 
   QString lastUsedDir = defaultExportPath();
 
@@ -2693,6 +2791,7 @@ void QgsLayoutDesignerDialog::exportAtlasToRaster()
 
   mView->setPaintingEnabled( false );
   QgsTemporaryCursorOverride cursorOverride( Qt::BusyCursor );
+  QgsAtlasExportGuard exportingAtlas( this );
 
   QString error;
   std::unique_ptr< QgsFeedback > feedback = qgis::make_unique< QgsFeedback >();
@@ -2709,12 +2808,10 @@ void QgsLayoutDesignerDialog::exportAtlasToRaster()
     proxyTask->setProxyProgress( progress );
 
 #ifdef Q_OS_LINUX
-    // For some reason on Windows hasPendingEvents() always return true,
-    // but one iteration is actually enough on Windows to get good interactivity
+    // One iteration is actually enough on Windows to get good interactivity
     // whereas on Linux we must allow for far more iterations.
-    // For safety limit the number of iterations
     int nIters = 0;
-    while ( QCoreApplication::hasPendingEvents() && ++nIters < 100 )
+    while ( ++nIters < 100 )
 #endif
     {
       QCoreApplication::processEvents();
@@ -2784,7 +2881,15 @@ void QgsLayoutDesignerDialog::exportAtlasToSvg()
   if ( !printAtlas || !printAtlas->enabled() )
     return;
 
-  loadAtlasPredefinedScalesFromProject();
+  if ( !printAtlas->coverageLayer() )
+  {
+    QMessageBox::warning( this, tr( "Export Atlas" ),
+                          tr( "Error: No coverage layer is set." ),
+                          QMessageBox::Ok,
+                          QMessageBox::Ok );
+    return;
+  }
+
   if ( containsWmsLayers() )
   {
     showWmsPrintingWarning();
@@ -2851,6 +2956,7 @@ void QgsLayoutDesignerDialog::exportAtlasToSvg()
 
   mView->setPaintingEnabled( false );
   QgsTemporaryCursorOverride cursorOverride( Qt::BusyCursor );
+  QgsAtlasExportGuard exportingAtlas( this );
 
   QString error;
   std::unique_ptr< QgsFeedback > feedback = qgis::make_unique< QgsFeedback >();
@@ -2867,12 +2973,10 @@ void QgsLayoutDesignerDialog::exportAtlasToSvg()
     proxyTask->setProxyProgress( progress );
 
 #ifdef Q_OS_LINUX
-    // For some reason on Windows hasPendingEvents() always return true,
-    // but one iteration is actually enough on Windows to get good interactivity
+    // One iteration is actually enough on Windows to get good interactivity
     // whereas on Linux we must allow for far more iterations.
-    // For safety limit the number of iterations
     int nIters = 0;
-    while ( QCoreApplication::hasPendingEvents() && ++nIters < 100 )
+    while ( ++nIters < 100 )
 #endif
     {
       QCoreApplication::processEvents();
@@ -2955,7 +3059,15 @@ void QgsLayoutDesignerDialog::exportAtlasToPdf()
   if ( !printAtlas || !printAtlas->enabled() )
     return;
 
-  loadAtlasPredefinedScalesFromProject();
+  if ( !printAtlas->coverageLayer() )
+  {
+    QMessageBox::warning( this, tr( "Export Atlas" ),
+                          tr( "Error: No coverage layer is set." ),
+                          QMessageBox::Ok,
+                          QMessageBox::Ok );
+    return;
+  }
+
   if ( containsWmsLayers() )
   {
     showWmsPrintingWarning();
@@ -2971,7 +3083,7 @@ void QgsLayoutDesignerDialog::exportAtlasToPdf()
     showForceVectorWarning();
   }
 
-  bool singleFile = mLayout->customProperty( QStringLiteral( "singleFile" ), true ).toBool();
+  const bool singleFile = mLayout->customProperty( QStringLiteral( "singleFile" ), true ).toBool();
 
   QString outputFileName;
   QString dir;
@@ -3059,12 +3171,22 @@ void QgsLayoutDesignerDialog::exportAtlasToPdf()
     outputFileName = QDir( dir ).filePath( QStringLiteral( "atlas" ) ); // filename is overridden by atlas
   }
 
+  bool allowGeoPdfExport = true;
+  QString geoPdfReason;
+  if ( singleFile )
+  {
+    allowGeoPdfExport = false;
+    geoPdfReason = tr( "GeoPDF export is not available when exporting an atlas to a single PDF file." );
+  }
+
   QgsLayoutExporter::PdfExportSettings pdfSettings;
-  if ( !getPdfExportSettings( pdfSettings ) )
+  if ( !getPdfExportSettings( pdfSettings, allowGeoPdfExport, geoPdfReason ) )
     return;
 
   mView->setPaintingEnabled( false );
   QgsTemporaryCursorOverride cursorOverride( Qt::BusyCursor );
+  QgsAtlasExportGuard exportingAtlas( this );
+
   pdfSettings.rasterizeWholeImage = mLayout->customProperty( QStringLiteral( "rasterize" ), false ).toBool();
 
   QString error;
@@ -3082,12 +3204,10 @@ void QgsLayoutDesignerDialog::exportAtlasToPdf()
     proxyTask->setProxyProgress( progress );
 
 #ifdef Q_OS_LINUX
-    // For some reason on Windows hasPendingEvents() always return true,
-    // but one iteration is actually enough on Windows to get good interactivity
+    // One iteration is actually enough on Windows to get good interactivity
     // whereas on Linux we must allow for far more iterations.
-    // For safety limit the number of iterations
     int nIters = 0;
-    while ( QCoreApplication::hasPendingEvents() && ++nIters < 100 )
+    while ( ++nIters < 100 )
 #endif
     {
       QCoreApplication::processEvents();
@@ -3203,6 +3323,7 @@ void QgsLayoutDesignerDialog::exportReportToRaster()
 
   mView->setPaintingEnabled( false );
   QgsTemporaryCursorOverride cursorOverride( Qt::BusyCursor );
+  QgsAtlasExportGuard exportingAtlas( this );
 
   QString error;
   std::unique_ptr< QgsFeedback > feedback = qgis::make_unique< QgsFeedback >();
@@ -3217,12 +3338,10 @@ void QgsLayoutDesignerDialog::exportReportToRaster()
     progressDialog->setLabelText( feedback->property( "progress" ).toString() ) ;
 
 #ifdef Q_OS_LINUX
-    // For some reason on Windows hasPendingEvents() always return true,
-    // but one iteration is actually enough on Windows to get good interactivity
+    // One iteration is actually enough on Windows to get good interactivity
     // whereas on Linux we must allow for far more iterations.
-    // For safety limit the number of iterations
     int nIters = 0;
-    while ( QCoreApplication::hasPendingEvents() && ++nIters < 100 )
+    while ( ++nIters < 100 )
 #endif
     {
       QCoreApplication::processEvents();
@@ -3321,6 +3440,7 @@ void QgsLayoutDesignerDialog::exportReportToSvg()
 
   mView->setPaintingEnabled( false );
   QgsTemporaryCursorOverride cursorOverride( Qt::BusyCursor );
+  QgsAtlasExportGuard exportingAtlas( this );
 
   QString error;
   std::unique_ptr< QgsFeedback > feedback = qgis::make_unique< QgsFeedback >();
@@ -3335,12 +3455,10 @@ void QgsLayoutDesignerDialog::exportReportToSvg()
     progressDialog->setLabelText( feedback->property( "progress" ).toString() ) ;
 
 #ifdef Q_OS_LINUX
-    // For some reason on Windows hasPendingEvents() always return true,
-    // but one iteration is actually enough on Windows to get good interactivity
+    // One iteration is actually enough on Windows to get good interactivity
     // whereas on Linux we must allow for far more iterations.
-    // For safety limit the number of iterations
     int nIters = 0;
-    while ( QCoreApplication::hasPendingEvents() && ++nIters < 100 )
+    while ( ++nIters < 100 )
 #endif
     {
       QCoreApplication::processEvents();
@@ -3456,6 +3574,7 @@ void QgsLayoutDesignerDialog::exportReportToPdf()
 
   mView->setPaintingEnabled( false );
   QgsTemporaryCursorOverride cursorOverride( Qt::BusyCursor );
+  QgsAtlasExportGuard exportingAtlas( this );
 
   pdfSettings.rasterizeWholeImage = rasterize;
 
@@ -3472,12 +3591,10 @@ void QgsLayoutDesignerDialog::exportReportToPdf()
     progressDialog->setLabelText( feedback->property( "progress" ).toString() ) ;
 
 #ifdef Q_OS_LINUX
-    // For some reason on Windows hasPendingEvents() always return true,
-    // but one iteration is actually enough on Windows to get good interactivity
+    // One iteration is actually enough on Windows to get good interactivity
     // whereas on Linux we must allow for far more iterations.
-    // For safety limit the number of iterations
     int nIters = 0;
-    while ( QCoreApplication::hasPendingEvents() && ++nIters < 100 )
+    while ( ++nIters < 100 )
 #endif
     {
       QCoreApplication::processEvents();
@@ -3564,6 +3681,7 @@ void QgsLayoutDesignerDialog::printReport()
   QgsLayoutExporter::PrintExportSettings printSettings;
   if ( mLayout )
     printSettings.rasterizeWholeImage = mLayout->customProperty( QStringLiteral( "rasterize" ), false ).toBool();
+  printSettings.predefinedMapScales = predefinedScales();
 
   QString error;
   std::unique_ptr< QgsFeedback > feedback = qgis::make_unique< QgsFeedback >();
@@ -3578,12 +3696,10 @@ void QgsLayoutDesignerDialog::printReport()
     progressDialog->setLabelText( feedback->property( "progress" ).toString() ) ;
 
 #ifdef Q_OS_LINUX
-    // For some reason on Windows hasPendingEvents() always return true,
-    // but one iteration is actually enough on Windows to get good interactivity
+    // One iteration is actually enough on Windows to get good interactivity
     // whereas on Linux we must allow for far more iterations.
-    // For safety limit the number of iterations
     int nIters = 0;
-    while ( QCoreApplication::hasPendingEvents() && ++nIters < 100 )
+    while ( ++nIters < 100 )
 #endif
     {
       QCoreApplication::processEvents();
@@ -3695,19 +3811,48 @@ void QgsLayoutDesignerDialog::populateLayoutsMenu()
 
 void QgsLayoutDesignerDialog::paste()
 {
-  QPointF pt = mView->mapFromGlobal( QCursor::pos() );
+  const QPoint viewPoint = mView->mapFromGlobal( QCursor::pos() );
   //TODO - use a better way of determining whether paste was triggered by keystroke
   //or menu item
-  QList< QgsLayoutItem * > items;
-  if ( ( pt.x() < 0 ) || ( pt.y() < 0 ) )
+  QPointF layoutPoint;
+  if ( ( viewPoint.x() < 0 ) || ( viewPoint.y() < 0 ) )
   {
     //action likely triggered by menu, paste items in center of screen
-    items = mView->pasteItems( QgsLayoutView::PasteModeCenter );
+    layoutPoint = mView->mapToScene( mView->viewport()->rect().center() );
   }
   else
   {
-    //action likely triggered by keystroke, paste items at cursor position
-    items = mView->pasteItems( QgsLayoutView::PasteModeCursor );
+    layoutPoint = mView->mapToScene( viewPoint );
+  }
+
+  QList< QgsLayoutItem * > items;
+
+  // give custom paste handlers first shot at processing this
+  QClipboard *clipboard = QApplication::clipboard();
+  const QMimeData *data = clipboard->mimeData();
+  const QVector<QPointer<QgsLayoutCustomDropHandler >> handlers = QgisApp::instance()->customLayoutDropHandlers();
+  bool handled = false;
+  for ( QgsLayoutCustomDropHandler *handler : handlers )
+  {
+    if ( handler && handler->handlePaste( iface(), layoutPoint, data, items ) )
+    {
+      handled = true;
+      break;
+    }
+  }
+
+  if ( !handled )
+  {
+    if ( ( viewPoint.x() < 0 ) || ( viewPoint.y() < 0 ) )
+    {
+      //action likely triggered by menu, paste items in center of screen
+      items = mView->pasteItems( QgsLayoutView::PasteModeCenter );
+    }
+    else
+    {
+      //action likely triggered by keystroke, paste items at cursor position
+      items = mView->pasteItems( QgsLayoutView::PasteModeCursor );
+    }
   }
 
   whileBlocking( currentLayout() )->deselectAll();
@@ -3792,11 +3937,12 @@ void QgsLayoutDesignerDialog::createLayoutPropertiesWidget()
 
   mLayoutPropertiesWidget = new QgsLayoutPropertiesWidget( mGeneralDock, mLayout );
   mLayoutPropertiesWidget->setDockMode( true );
+  mLayoutPropertiesWidget->setMasterLayout( mMasterLayout );
   mGeneralPropertiesStack->setMainPanel( mLayoutPropertiesWidget );
 
-  QgsLayoutGuideWidget *guideWidget = new QgsLayoutGuideWidget( mGuideDock, mLayout, mView );
-  guideWidget->setDockMode( true );
-  mGuideStack->setMainPanel( guideWidget );
+  mGuideWidget = new QgsLayoutGuideWidget( mGuideDock, mLayout, mView );
+  mGuideWidget->setDockMode( true );
+  mGuideStack->setMainPanel( mGuideWidget );
 }
 
 void QgsLayoutDesignerDialog::createAtlasWidget()
@@ -4058,6 +4204,7 @@ bool QgsLayoutDesignerDialog::getRasterExportSettings( QgsLayoutExporter::ImageE
     settings.imageSize = imageSize;
   }
   settings.generateWorldFile = imageDlg.generateWorldFile();
+  settings.predefinedMapScales = predefinedScales();
   settings.flags |= QgsLayoutRenderContext::FlagUseAdvancedEffects;
   if ( imageDlg.antialiasing() )
     settings.flags |= QgsLayoutRenderContext::FlagAntialiasing;
@@ -4172,6 +4319,7 @@ bool QgsLayoutDesignerDialog::getSvgExportSettings( QgsLayoutExporter::SvgExport
   settings.exportMetadata = includeMetadata;
   settings.textRenderFormat = textRenderFormat;
   settings.simplifyGeometries = simplify;
+  settings.predefinedMapScales = predefinedScales();
 
   if ( disableRasterTiles )
     settings.flags = settings.flags | QgsLayoutRenderContext::FlagDisableTiledRasterLayerRenders;
@@ -4181,7 +4329,7 @@ bool QgsLayoutDesignerDialog::getSvgExportSettings( QgsLayoutExporter::SvgExport
   return true;
 }
 
-bool QgsLayoutDesignerDialog::getPdfExportSettings( QgsLayoutExporter::PdfExportSettings &settings )
+bool QgsLayoutDesignerDialog::getPdfExportSettings( QgsLayoutExporter::PdfExportSettings &settings, bool allowGeoPdfExport, const QString &geoPdfReason )
 {
   QgsRenderContext::TextRenderFormat prevTextRenderFormat = mMasterLayout->layoutProject()->labelingEngineSettings().defaultTextRenderFormat();
   bool forceVector = false;
@@ -4191,22 +4339,27 @@ bool QgsLayoutDesignerDialog::getPdfExportSettings( QgsLayoutExporter::PdfExport
   bool simplify = true;
   bool geoPdf = false;
   bool useOgcBestPracticeFormat = false;
-  bool exportGeoPdfFeatures = true;
+  bool losslessImages = false;
   QStringList exportThemes;
+  QStringList geoPdfLayerOrder;
   if ( mLayout )
   {
     settings.flags = mLayout->renderContext().flags();
     forceVector = mLayout->customProperty( QStringLiteral( "forceVector" ), 0 ).toBool();
+    losslessImages = mLayout->customProperty( QStringLiteral( "pdfLosslessImages" ), 0 ).toBool();
     appendGeoreference = mLayout->customProperty( QStringLiteral( "pdfAppendGeoreference" ), 1 ).toBool();
     includeMetadata = mLayout->customProperty( QStringLiteral( "pdfIncludeMetadata" ), 1 ).toBool();
     disableRasterTiles = mLayout->customProperty( QStringLiteral( "pdfDisableRasterTiles" ), 0 ).toBool();
     simplify = mLayout->customProperty( QStringLiteral( "pdfSimplify" ), 1 ).toBool();
     geoPdf = mLayout->customProperty( QStringLiteral( "pdfCreateGeoPdf" ), 0 ).toBool();
     useOgcBestPracticeFormat = mLayout->customProperty( QStringLiteral( "pdfOgcBestPracticeFormat" ), 0 ).toBool();
-    exportGeoPdfFeatures = mLayout->customProperty( QStringLiteral( "pdfExportGeoPdfFeatures" ), 1 ).toBool();
     const QString themes = mLayout->customProperty( QStringLiteral( "pdfExportThemes" ) ).toString();
     if ( !themes.isEmpty() )
       exportThemes = themes.split( QStringLiteral( "~~~" ) );
+    const QString layerOrder = mLayout->customProperty( QStringLiteral( "pdfLayerOrder" ) ).toString();
+    if ( !layerOrder.isEmpty() )
+      geoPdfLayerOrder = layerOrder.split( QStringLiteral( "~~~" ) );
+
     const int prevLayoutSettingLabelsAsOutlines = mLayout->customProperty( QStringLiteral( "pdfTextFormat" ), -1 ).toInt();
     if ( prevLayoutSettingLabelsAsOutlines >= 0 )
     {
@@ -4216,7 +4369,29 @@ bool QgsLayoutDesignerDialog::getPdfExportSettings( QgsLayoutExporter::PdfExport
   }
 
   // open options dialog
-  QgsLayoutPdfExportOptionsDialog dialog( this );
+  QString dialogGeoPdfReason = geoPdfReason;
+  QList< QgsLayoutItemMap * > maps;
+  if ( mLayout )
+    mLayout->layoutItems( maps );
+
+  for ( const QgsLayoutItemMap *map : maps )
+  {
+    if ( !map->crs().isValid() )
+    {
+      allowGeoPdfExport = false;
+      dialogGeoPdfReason = tr( "One or more map items do not have a valid CRS set. This is required for GeoPDF export." );
+      break;
+    }
+
+    if ( map->mapRotation() != 0 || map->itemRotation() != 0 || map->dataDefinedProperties().isActive( QgsLayoutObject::MapRotation ) )
+    {
+      allowGeoPdfExport = false;
+      dialogGeoPdfReason = tr( "One or more map items are rotated. This is not supported for GeoPDF export." );
+      break;
+    }
+  }
+
+  QgsLayoutPdfExportOptionsDialog dialog( this, allowGeoPdfExport, dialogGeoPdfReason, geoPdfLayerOrder );
 
   dialog.setTextRenderFormat( prevTextRenderFormat );
   dialog.setForceVector( forceVector );
@@ -4227,8 +4402,8 @@ bool QgsLayoutDesignerDialog::getPdfExportSettings( QgsLayoutExporter::PdfExport
   dialog.setGeometriesSimplified( simplify );
   dialog.setExportGeoPdf( geoPdf );
   dialog.setUseOgcBestPracticeFormat( useOgcBestPracticeFormat );
-  dialog.setExportGeoPdfFeatures( exportGeoPdfFeatures );
   dialog.setExportThemes( exportThemes );
+  dialog.setLosslessImageExport( losslessImages );
 
   if ( dialog.exec() != QDialog::Accepted )
     return false;
@@ -4241,8 +4416,9 @@ bool QgsLayoutDesignerDialog::getPdfExportSettings( QgsLayoutExporter::PdfExport
   QgsRenderContext::TextRenderFormat textRenderFormat = dialog.textRenderFormat();
   geoPdf = dialog.exportGeoPdf();
   useOgcBestPracticeFormat = dialog.useOgcBestPracticeFormat();
-  exportGeoPdfFeatures = dialog.exportGeoPdfFeatures();
   exportThemes = dialog.exportThemes();
+  geoPdfLayerOrder = dialog.geoPdfLayerOrder();
+  losslessImages = dialog.losslessImageExport();
 
   if ( mLayout )
   {
@@ -4255,8 +4431,9 @@ bool QgsLayoutDesignerDialog::getPdfExportSettings( QgsLayoutExporter::PdfExport
     mLayout->setCustomProperty( QStringLiteral( "pdfSimplify" ), simplify ? 1 : 0 );
     mLayout->setCustomProperty( QStringLiteral( "pdfCreateGeoPdf" ), geoPdf ? 1 : 0 );
     mLayout->setCustomProperty( QStringLiteral( "pdfOgcBestPracticeFormat" ), useOgcBestPracticeFormat ? 1 : 0 );
-    mLayout->setCustomProperty( QStringLiteral( "pdfExportGeoPdfFeatures" ), exportGeoPdfFeatures ? 1 : 0 );
-    mLayout->setCustomProperty( QStringLiteral( "pdfExportThemes" ), exportThemes.join( QStringLiteral( "~~~" ) ) );
+    mLayout->setCustomProperty( QStringLiteral( "pdfExportThemes" ), exportThemes.join( QLatin1String( "~~~" ) ) );
+    mLayout->setCustomProperty( QStringLiteral( "pdfLayerOrder" ), geoPdfLayerOrder.join( QLatin1String( "~~~" ) ) );
+    mLayout->setCustomProperty( QStringLiteral( "pdfLosslessImages" ), losslessImages ? 1 : 0 );
   }
 
   settings.forceVectorOutput = forceVector;
@@ -4267,13 +4444,18 @@ bool QgsLayoutDesignerDialog::getPdfExportSettings( QgsLayoutExporter::PdfExport
   settings.writeGeoPdf = geoPdf;
   settings.useOgcBestPracticeFormatGeoreferencing = useOgcBestPracticeFormat;
   settings.useIso32000ExtensionFormatGeoreferencing = !useOgcBestPracticeFormat;
-  settings.includeGeoPdfFeatures = exportGeoPdfFeatures;
   settings.exportThemes = exportThemes;
+  settings.predefinedMapScales = predefinedScales();
 
   if ( disableRasterTiles )
     settings.flags = settings.flags | QgsLayoutRenderContext::FlagDisableTiledRasterLayerRenders;
   else
     settings.flags = settings.flags & ~QgsLayoutRenderContext::FlagDisableTiledRasterLayerRenders;
+
+  if ( losslessImages )
+    settings.flags = settings.flags | QgsLayoutRenderContext::FlagLosslessImageRendering;
+  else
+    settings.flags = settings.flags & ~QgsLayoutRenderContext::FlagLosslessImageRendering;
 
   return true;
 }
@@ -4320,7 +4502,8 @@ void QgsLayoutDesignerDialog::updateAtlasPageComboBox( int pageCount )
 
 void QgsLayoutDesignerDialog::atlasFeatureChanged( const QgsFeature &feature )
 {
-  //TODO - this should be disabled during an export
+  if ( mIsExportingAtlas )
+    return;
 
   QgsPrintLayout *printLayout = qobject_cast< QgsPrintLayout *>( mLayout );
   if ( !printLayout )
@@ -4351,32 +4534,55 @@ void QgsLayoutDesignerDialog::atlasFeatureChanged( const QgsFeature &feature )
   mapCanvas->stopRendering();
   mapCanvas->redrawAllLayers();
 
-  mView->setSectionLabel( atlas->nameForPage( atlas->currentFeatureNumber() ) );
+  const QString atlasFeatureName = atlas->nameForPage( atlas->currentFeatureNumber() );
+  mView->setSectionLabel( atlasFeatureName );
+
+  if ( feature.isValid() && ( !feature.hasGeometry() || feature.geometry().isEmpty() ) )
+  {
+    // a little sanity check -- if there's any maps in this layout which are set to be atlas controlled,
+    // and we hit a feature with no geometry attached, then warn the user
+    QList< QgsLayoutItemMap * > maps;
+    mLayout->layoutItems( maps );
+    for ( const QgsLayoutItemMap *map : qgis::as_const( maps ) )
+    {
+      if ( map->atlasDriven() )
+      {
+        mMessageBar->pushWarning( QString(), tr( "Atlas feature %1 has no geometry — linked map extents cannot be updated" ).arg( atlasFeatureName ) );
+        break;
+      }
+    }
+  }
 }
 
-void QgsLayoutDesignerDialog::loadAtlasPredefinedScalesFromProject()
+void QgsLayoutDesignerDialog::loadPredefinedScalesFromProject()
 {
-  QVector<qreal> projectScales;
+  if ( mLayout )
+    mLayout->renderContext().setPredefinedScales( predefinedScales() );
+}
+
+QVector<double> QgsLayoutDesignerDialog::predefinedScales() const
+{
+  QgsProject *project = mMasterLayout->layoutProject();
   // first look at project's scales
-  QStringList scales( mLayout->project()->readListEntry( QStringLiteral( "Scales" ), QStringLiteral( "/ScalesList" ) ) );
-  bool hasProjectScales( mLayout->project()->readBoolEntry( QStringLiteral( "Scales" ), QStringLiteral( "/useProjectScales" ) ) );
-  if ( !hasProjectScales || scales.isEmpty() )
+  QVector< double > projectMapScales = project->viewSettings()->mapScales();
+  bool hasProjectScales( project->viewSettings()->useProjectScales() );
+  if ( !hasProjectScales || projectMapScales.isEmpty() )
   {
     // default to global map tool scales
     QgsSettings settings;
-    QString scalesStr( settings.value( QStringLiteral( "Map/scales" ), PROJECT_SCALES ).toString() );
-    scales = scalesStr.split( ',' );
-  }
+    QString scalesStr( settings.value( QStringLiteral( "Map/scales" ), Qgis::defaultProjectScales() ).toString() );
+    const QStringList scales = scalesStr.split( ',' );
 
-  for ( auto scaleIt = scales.constBegin(); scaleIt != scales.constEnd(); ++scaleIt )
-  {
-    QStringList parts( scaleIt->split( ':' ) );
-    if ( parts.size() == 2 )
+    for ( const QString &scale : scales )
     {
-      projectScales.push_back( parts[1].toDouble() );
+      QStringList parts( scale.split( ':' ) );
+      if ( parts.size() == 2 )
+      {
+        projectMapScales.push_back( parts[1].toDouble() );
+      }
     }
   }
-  mLayout->reportContext().setPredefinedScales( projectScales );
+  return projectMapScales;
 }
 
 QgsLayoutAtlas *QgsLayoutDesignerDialog::atlas()
@@ -4449,6 +4655,8 @@ void QgsLayoutDesignerDialog::toggleActions( bool layoutAvailable )
   mActionExportAsImage->setEnabled( layoutAvailable );
   mActionExportAsPDF->setEnabled( layoutAvailable );
   mActionExportAsSVG->setEnabled( layoutAvailable );
+  mActionPrint->setEnabled( layoutAvailable );
+  mActionPrintReport->setEnabled( layoutAvailable );
   mActionCut->setEnabled( layoutAvailable );
   mActionCopy->setEnabled( layoutAvailable );
   mActionPaste->setEnabled( layoutAvailable );
@@ -4570,7 +4778,7 @@ void QgsLayoutDesignerDialog::setLastExportPath( const QString &path ) const
   QgsSettings().setValue( QStringLiteral( "lastLayoutExportDir" ), savePath, QgsSettings::App );
 }
 
-bool QgsLayoutDesignerDialog::checkBeforeExport()
+bool QgsLayoutDesignerDialog::checkBeforeExport( )
 {
   if ( mLayout )
   {
@@ -4662,12 +4870,11 @@ bool QgsLayoutDesignerDialog::atlasPreviewEnabled() const
   return mActionAtlasPreview->isChecked();
 }
 
-void QgsLayoutDesignerDialog::setAtlasFeature( QgsMapLayer *layer, const QgsFeature &feat )
+void QgsLayoutDesignerDialog::setAtlasFeature( const QgsFeature &feature )
 {
   QgsLayoutAtlas *layoutAtlas = atlas();
-  if ( !layoutAtlas || !layoutAtlas->enabled() || layoutAtlas->coverageLayer() != layer )
+  if ( !layoutAtlas || !layoutAtlas->enabled() )
   {
-    //either atlas isn't enabled, or layer doesn't match
     return;
   }
 
@@ -4679,7 +4886,7 @@ void QgsLayoutDesignerDialog::setAtlasFeature( QgsMapLayer *layer, const QgsFeat
   }
 
   //set current preview feature id
-  layoutAtlas->seekTo( feat );
+  layoutAtlas->seekTo( feature );
 
   //bring layout window to foreground
   activate();
@@ -4692,4 +4899,19 @@ void QgsLayoutDesignerDialog::setSectionTitle( const QString &title )
   mView->setSectionLabel( title );
 }
 
+void QgsLayoutDesignerDialog::toolButtonActionTriggered( QAction *action )
+{
+  QToolButton *bt = qobject_cast<QToolButton *>( sender() );
+  if ( !bt )
+    return;
 
+  QgsSettings settings;
+  if ( action == mActionExportAtlasAsImage )
+    settings.setValue( QStringLiteral( "LayoutDesigner/atlasExportAction" ), 0 );
+  else if ( action == mActionExportAtlasAsSVG )
+    settings.setValue( QStringLiteral( "LayoutDesigner/atlasExportAction" ), 2 );
+  else if ( action == mActionExportAtlasAsPDF )
+    settings.setValue( QStringLiteral( "LayoutDesigner/atlasExportAction" ), 3 );
+
+  bt->setDefaultAction( action );
+}

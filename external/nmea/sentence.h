@@ -31,7 +31,9 @@ enum nmeaPACKTYPE
   GPGSV   = 0x0004,   //!< GSV - Number of SVs in view, PRN numbers, elevation, azimuth & SNR values.
   GPRMC   = 0x0008,   //!< RMC - Recommended Minimum Specific GPS/TRANSIT Data.
   GPVTG   = 0x0010,   //!< VTG - Actual track made good and speed over ground.
-  GPGST   = 0x0012    //!< GST - GPS Pseudorange Noise Statistics
+  GPGST   = 0x0012,   //!< GST - GPS Pseudorange Noise Statistics
+  HCHDG   = 0x0020,   //!< HDG - Heading, Deviation and Variation
+  HCHDT   = 0x0100,   //!< HDT - Heading reference to true north
 };
 
 /**
@@ -62,7 +64,7 @@ typedef struct _nmeaGPGGA
 typedef struct _nmeaGPGST
 {
   nmeaTIME utc;       //!< UTC of position fix
-  double  rms_pr;     //!< RMS value of the pseudorange residuals;
+  double  rms_pr;     //!< RMS value of the pseudorange residuals; Includes carrier phase residuals during periods of RTK (float) and RTK (fixed) processing
   double  err_major;  //!< Error ellipse semi-major axis 1 sigma error, in meters
   double  err_minor;  //!< Error ellipse semi-minor axis 1 sigma error, in meters
   double  err_ori;    //!< Error ellipse orientation, degrees from true north
@@ -132,6 +134,37 @@ typedef struct _nmeaGPVTG
   char    spk_k;      //!< Fixed text 'K' indicates that speed over ground is in kilometers/hour
 
 } nmeaGPVTG;
+
+/**
+ * HDT packet information structure (Heading from True North)
+ */
+typedef struct _nmeaGPHDT
+{
+  double  heading;    //!< Heading in degrees
+  char    t_flag;      //!< Fixed text 'T' indicates that heading is relative to true north
+
+} nmeaGPHDT;
+
+/**
+ * HCHDG packet information structure (magnetic heading)
+ */
+typedef struct _nmeaHCHDG
+{
+  double mag_heading;   //!< Magnetic sensor heading (degrees)
+  double mag_deviation; //!< Magnetic deviation (degrees)
+  char ew_deviation;     //!< [E]ast or [W]est
+  double mag_variation; //!< Magnetic variation (degrees)
+  char ew_variation;    //!< [E]ast or [W]est
+} nmeaHCHDG;
+
+/**
+ * HDT packet information structure (Heading, )
+ */
+typedef struct _nmeaHCHDT
+{
+  double direction;   //!< Heading respect to true north (degrees)
+  char t_flag;    //!< Static text [T]
+} nmeaHCHDT;
 
 void nmea_zero_GPGGA( nmeaGPGGA *pack );
 void nmea_zero_GPGST( nmeaGPGST *pack );

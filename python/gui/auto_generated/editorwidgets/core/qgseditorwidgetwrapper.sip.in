@@ -10,6 +10,7 @@
 
 
 
+
 class QgsEditorWidgetWrapper : QgsWidgetWrapper
 {
 %Docstring
@@ -244,7 +245,8 @@ Emit this signal, whenever the value changed.
 
 :param value: The new value
 
-.. deprecated:: since QGIS 3.10 use valuesChanged signal instead
+.. deprecated:: QGIS 3.10
+   use valuesChanged signal instead
 %End
 
     void valuesChanged( const QVariant &value, const QVariantList &additionalFieldValues = QVariantList() );
@@ -281,7 +283,7 @@ Emit this signal when the constraint result visibility changed.
 %Docstring
 Will be called when the feature changes
 
-Is forwarded to the slot setValues()
+Is forwarded to the slot :py:func:`~QgsEditorWidgetWrapper.setValues`
 
 :param feature: The new feature
 %End
@@ -299,7 +301,20 @@ to reflect the new values.
 
     void emitValueChanged();
 %Docstring
-Will call the value() method to determine the emitted value
+Will call the :py:func:`~QgsEditorWidgetWrapper.value` method to determine the emitted value
+%End
+
+    virtual void parentFormValueChanged( const QString &attribute, const QVariant &value );
+%Docstring
+Is called in embedded form widgets when an ``attribute`` ``value`` in
+the parent form has changed.
+
+The default implementations does nothing.
+Subclasses should reimplement this method to notify the form widgets
+that something has changed in case they have filter expressions that
+depend on the parent form scope.
+
+.. versionadded:: 3.14
 %End
 
   protected:
@@ -344,7 +359,6 @@ attribute ``attributeName`` to ``attributeValue``
 
 .. versionadded:: 3.2
 %End
-
 
 };
 

@@ -43,18 +43,20 @@ class QgsField;
 
 class QgsSqliteHandle;
 class QgsSpatiaLiteFeatureIterator;
+class QgsSpatiaLiteTransaction;
+class QgsTransaction;
 
 #include "qgsdatasourceuri.h"
 
 /**
-  \class QgsSpatiaLiteProvider
-  \brief Data provider for SQLite/SpatiaLite layers.
-
-  This provider implements the
-  interface defined in the QgsDataProvider class to provide access to spatial
-  data residing in a SQLite/SpatiaLite enabled database.
+ * \class QgsSpatiaLiteProvider
+ * \brief Data provider for SQLite/SpatiaLite layers.
+ *
+ * This provider implements the
+ * interface defined in the QgsDataProvider class to provide access to spatial
+ * data residing in a SQLite/SpatiaLite enabled database.
   */
-class QgsSpatiaLiteProvider: public QgsVectorDataProvider
+class QgsSpatiaLiteProvider final: public QgsVectorDataProvider
 {
     Q_OBJECT
 
@@ -80,7 +82,7 @@ class QgsSpatiaLiteProvider: public QgsVectorDataProvider
      * \param uri uniform resource locator (URI) for a dataset
      * \param options generic data provider options
      */
-    explicit QgsSpatiaLiteProvider( QString const &uri, const QgsDataProvider::ProviderOptions &providerOptions );
+    explicit QgsSpatiaLiteProvider( QString const &uri, const QgsDataProvider::ProviderOptions &providerOptions, QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
     ~ QgsSpatiaLiteProvider() override;
 
@@ -114,7 +116,7 @@ class QgsSpatiaLiteProvider: public QgsVectorDataProvider
 
     bool isValid() const override;
     bool isSaveAndLoadStyleToDatabaseSupported() const override { return true; }
-    bool addFeatures( QgsFeatureList &flist, QgsFeatureSink::Flags flags = nullptr ) override;
+    bool addFeatures( QgsFeatureList &flist, QgsFeatureSink::Flags flags = QgsFeatureSink::Flags() ) override;
     bool deleteFeatures( const QgsFeatureIds &id ) override;
     bool truncate() override;
     bool addAttributes( const QList<QgsField> &attributes ) override;
@@ -124,6 +126,7 @@ class QgsSpatiaLiteProvider: public QgsVectorDataProvider
     QVariant defaultValue( int fieldId ) const override;
     bool skipConstraintCheck( int fieldIndex, QgsFieldConstraints::Constraint constraint, const QVariant &value = QVariant() ) const override;
     bool createAttributeIndex( int field ) override;
+    SpatialIndexPresence hasSpatialIndex() const override;
 
     /**
      * The SpatiaLite provider does its own transforms so we return
@@ -219,7 +222,16 @@ class QgsSpatiaLiteProvider: public QgsVectorDataProvider
      */
     static QList<QgsVectorLayer *> searchLayers( const QList<QgsVectorLayer *> &layers, const QString &connectionInfo, const QString &tableName );
 
+    QgsSpatiaLiteTransaction *mTransaction = nullptr;
+
+    QgsTransaction *transaction() const override;
+
+    void setTransaction( QgsTransaction *transaction ) override;
+
     QgsFields mAttributeFields;
+
+    //! Map of field index to default value SQL fragments
+    QMap<int, QString> mDefaultValueClause;
 
     //! Flag indicating if the layer data source is a valid SpatiaLite layer
     bool mValid = false;
@@ -264,7 +276,7 @@ class QgsSpatiaLiteProvider: public QgsVectorDataProvider
     QString mGeometryColumn;
 
     //! Map of field index to default value
-    QMap<int, QVariant> mDefaultValues;
+    QMap<int, QString> mDefaultValues;
 
     //! Name of the SpatialIndex table
     QString mIndexTable;
@@ -305,7 +317,7 @@ class QgsSpatiaLiteProvider: public QgsVectorDataProvider
     //! this Geometry is supported by an MBR cache spatial index
     bool mSpatialIndexMbrCache = false;
 
-    QgsVectorDataProvider::Capabilities mEnabledCapabilities = nullptr;
+    QgsVectorDataProvider::Capabilities mEnabledCapabilities = QgsVectorDataProvider::Capabilities();
 
     QgsField field( int index ) const;
 
@@ -320,6 +332,10 @@ class QgsSpatiaLiteProvider: public QgsVectorDataProvider
 
     //! SpatiaLite minor version
     int mSpatialiteVersionMinor = 0;
+
+    //! Internal transaction handling (for addFeatures etc.)
+    int mSavepointId;
+    static QAtomicInt sSavepointId;
 
     /**
      * internal utility functions used to handle common SQLite tasks
@@ -378,13 +394,28 @@ class QgsSpatiaLiteProvider: public QgsVectorDataProvider
     /**
      * Handles an error encountered while executing an sql statement.
      */
-    void handleError( const QString &sql, char *errorMessage, bool rollback = false );
+    void handleError( const QString &sql, char *errorMessage, const QString &savepointId );
+
+    /**
+     * Sqlite exec sql wrapper for SQL logging
+     */
+    int exec_sql( const QString &sql, char *errMsg = nullptr );
+
+    /**
+     * Returns the sqlite handle to be used, if we are inside a transaction it will be the transaction's handle
+     */
+    sqlite3 *sqliteHandle( ) const;
+
+    static QString createIndexName( QString tableName, QString field );
 
     friend class QgsSpatiaLiteFeatureSource;
 
+    // QgsVectorDataProvider interface
+  public:
+    virtual QString defaultValueClause( int fieldIndex ) const override;
 };
 
-class QgsSpatiaLiteProviderMetadata: public QgsProviderMetadata
+class QgsSpatiaLiteProviderMetadata final: public QgsProviderMetadata
 {
   public:
     QgsSpatiaLiteProviderMetadata();
@@ -398,7 +429,8 @@ class QgsSpatiaLiteProviderMetadata: public QgsProviderMetadata
     int listStyles( const QString &uri, QStringList &ids, QStringList &names,
                     QStringList &descriptions, QString &errCause ) override;
     QVariantMap decodeUri( const QString &uri ) override;
-    QgsSpatiaLiteProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options ) override;
+    QString encodeUri( const QVariantMap &parts ) override;
+    QgsSpatiaLiteProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options, QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() ) override;
 
     QgsVectorLayerExporter::ExportError createEmptyLayer( const QString &uri, const QgsFields &fields,
         QgsWkbTypes::Type wkbType, const QgsCoordinateReferenceSystem &srs,
@@ -406,7 +438,20 @@ class QgsSpatiaLiteProviderMetadata: public QgsProviderMetadata
         const QMap<QString, QVariant> *options ) override;
     bool createDb( const QString &dbPath, QString &errCause ) override;
     QList< QgsDataItemProvider * > dataItemProviders() const override;
+
+    // QgsProviderMetadata interface
+  public:
+    QMap<QString, QgsAbstractProviderConnection *> connections( bool cached ) override;
+    QgsAbstractProviderConnection *createConnection( const QString &name ) override;
+    void deleteConnection( const QString &name ) override;
+    void saveConnection( const QgsAbstractProviderConnection *connection, const QString &name ) override;
+    QgsTransaction *createTransaction( const QString &connString ) override;
+
+  protected:
+
+    QgsAbstractProviderConnection *createConnection( const QString &uri, const QVariantMap &configuration ) override;
 };
+
 
 // clazy:excludeall=qstring-allocations
 

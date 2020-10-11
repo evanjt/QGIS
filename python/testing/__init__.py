@@ -26,6 +26,7 @@ import sys
 import difflib
 import functools
 import filecmp
+import tempfile
 
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import QgsApplication, QgsFeatureRequest, NULL
@@ -268,19 +269,22 @@ class TestCase(_TestCase):
             field_result = [fld for fld in fields_expected.toList() if fld.name() == field_expected.name()][0]
 
             # Cast field to a given type
+            isNumber = False
             if 'cast' in cmp:
                 if cmp['cast'] == 'int':
                     attr_expected = int(attr_expected) if attr_expected else None
                     attr_result = int(attr_result) if attr_result else None
+                    isNumber = True
                 if cmp['cast'] == 'float':
                     attr_expected = float(attr_expected) if attr_expected else None
                     attr_result = float(attr_result) if attr_result else None
+                    isNumber = True
                 if cmp['cast'] == 'str':
                     attr_expected = str(attr_expected) if attr_expected else None
                     attr_result = str(attr_result) if attr_result else None
 
             # Round field (only numeric so it works with __all__)
-            if 'precision' in cmp and field_expected.type() in [QVariant.Int, QVariant.Double, QVariant.LongLong]:
+            if 'precision' in cmp and (field_expected.type() in [QVariant.Int, QVariant.Double, QVariant.LongLong] or isNumber):
                 if not attr_expected == NULL:
                     attr_expected = round(attr_expected, cmp['precision'])
                 if not attr_result == NULL:
@@ -421,6 +425,7 @@ def start_app(cleanup=True):
         # no need to mess with it here.
         QGISAPP = QgsApplication(argvb, myGuiFlag)
 
+        os.environ['QGIS_CUSTOM_CONFIG_PATH'] = tempfile.mkdtemp('', 'QGIS-PythonTestConfigPath')
         QGISAPP.initQgis()
         print(QGISAPP.showSettings())
 

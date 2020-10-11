@@ -635,6 +635,7 @@ class TestQgsLayoutExporter(unittest.TestCase):
             self.assertEqual('proj abstract' in open(f).read(), expected)
             self.assertEqual('kw1' in open(f).read(), expected)
             self.assertEqual('kw2' in open(f).read(), expected)
+            self.assertEqual('xmlns:cc="http://creativecommons.org/ns#"' in open(f).read(), expected)
 
         for f in [svg_file_path, svg_file_path_2]:
             checkMetadata(f, True)
@@ -889,8 +890,7 @@ class TestQgsLayoutExporter(unittest.TestCase):
         project = QgsProject()
         project.addMapLayers([layer])
         # select epsg:2154
-        crs = QgsCoordinateReferenceSystem()
-        crs.createFromSrid(2154)
+        crs = QgsCoordinateReferenceSystem('epsg:2154')
         project.setCrs(crs)
 
         layout = QgsPrintLayout(project)

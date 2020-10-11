@@ -73,7 +73,7 @@ QVariant QgsSelectLayerTreeModel::data( const QModelIndex &index, int role ) con
     if ( QgsLayerTree::isLayer( node ) && index.column() > 0 )
     {
       QgsLayerTreeLayer *nodeLayer = QgsLayerTree::toLayer( node );
-      if ( nodeLayer->layer()->providerType() == QStringLiteral( "WFS" ) )
+      if ( nodeLayer->layer()->providerType() == QLatin1String( "WFS" ) )
       {
         switch ( role )
         {
@@ -115,7 +115,7 @@ QgsOfflineEditingPluginGui::QgsOfflineEditingPluginGui( QWidget *parent, Qt::Win
   QgsLayerTree *rootNode = QgsProject::instance()->layerTreeRoot()->clone();
   QgsLayerTreeModel *treeModel = new QgsSelectLayerTreeModel( rootNode, this );
   mLayerTree->setModel( treeModel );
-  mLayerTree->header()->setResizeMode( QHeaderView::ResizeToContents );
+  mLayerTree->header()->setSectionResizeMode( QHeaderView::ResizeToContents );
 
   connect( mSelectAllButton, &QAbstractButton::clicked, this, &QgsOfflineEditingPluginGui::selectAll );
   connect( mDeselectAllButton, &QAbstractButton::clicked, this, &QgsOfflineEditingPluginGui::deSelectAll );

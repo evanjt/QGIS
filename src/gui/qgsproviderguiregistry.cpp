@@ -24,6 +24,12 @@
 #include "qgslogger.h"
 #include "qgsgdalguiprovider.h"
 #include "qgsogrguiprovider.h"
+#include "qgsvectortileproviderguimetadata.h"
+
+#ifdef HAVE_STATIC_PROVIDERS
+#include "qgswmsprovidergui.h"
+#include "qgspostgresprovidergui.h"
+#endif
 
 /**
  * Convenience function for finding any existing data providers that match "providerKey"
@@ -48,6 +54,12 @@ QgsProviderGuiMetadata *findMetadata_( QgsProviderGuiRegistry::GuiProviders cons
 
 QgsProviderGuiRegistry::QgsProviderGuiRegistry( const QString &pluginPath )
 {
+  loadStaticProviders();
+  loadDynamicProviders( pluginPath );
+}
+
+void QgsProviderGuiRegistry::loadStaticProviders( )
+{
   // Register static providers
   QgsProviderGuiMetadata *gdal = new QgsGdalGuiProviderMetadata();
   mProviders[ gdal->key() ] = gdal;
@@ -55,11 +67,23 @@ QgsProviderGuiRegistry::QgsProviderGuiRegistry( const QString &pluginPath )
   QgsProviderGuiMetadata *ogr = new QgsOgrGuiProviderMetadata();
   mProviders[ ogr->key() ] = ogr;
 
-  loadDynamicProviders( pluginPath );
+  QgsProviderGuiMetadata *vt = new QgsVectorTileProviderGuiMetadata();
+  mProviders[ vt->key() ] = vt;
+
+#ifdef HAVE_STATIC_PROVIDERS
+  QgsProviderGuiMetadata *wms = new QgsWmsProviderGuiMetadata();
+  mProviders[ wms->key() ] = wms;
+
+  QgsProviderGuiMetadata *postgres = new QgsPostgresProviderGuiMetadata();
+  mProviders[ postgres->key() ] = postgres;
+#endif
 }
 
 void QgsProviderGuiRegistry::loadDynamicProviders( const QString &pluginPath )
 {
+#ifdef HAVE_STATIC_PROVIDERS
+  QgsDebugMsg( QStringLiteral( "Forced only static GUI providers" ) );
+#else
   typedef QgsProviderGuiMetadata *factory_function( );
 
   // add dynamic providers
@@ -75,7 +99,7 @@ void QgsProviderGuiRegistry::loadDynamicProviders( const QString &pluginPath )
   mLibraryDirectory.setNameFilters( QStringList( QStringLiteral( "*.so" ) ) );
 #endif
 
-  QgsDebugMsg( QStringLiteral( "Checking %1 for GUI provider plugins" ).arg( mLibraryDirectory.path() ) );
+  QgsDebugMsgLevel( QStringLiteral( "Checking %1 for GUI provider plugins" ).arg( mLibraryDirectory.path() ), 2 );
 
   if ( mLibraryDirectory.count() == 0 )
   {
@@ -124,6 +148,7 @@ void QgsProviderGuiRegistry::loadDynamicProviders( const QString &pluginPath )
       mProviders[providerKey] = meta;
     }
   }
+#endif
 }
 
 QgsProviderGuiRegistry::~QgsProviderGuiRegistry()

@@ -18,6 +18,7 @@
 #include "qgsproject.h"
 #include "qgsrelationmanager.h"
 #include "qgsrelationreferencewidget.h"
+#include "qgsattributeform.h"
 
 QgsRelationReferenceWidgetWrapper::QgsRelationReferenceWidgetWrapper( QgsVectorLayer *vl, int fieldIdx, QWidget *editor, QgsMapCanvas *canvas, QgsMessageBar *messageBar, QWidget *parent )
   : QgsEditorWidgetWrapper( vl, fieldIdx, editor, parent )
@@ -62,15 +63,22 @@ void QgsRelationReferenceWidgetWrapper::initWidget( QWidget *editor )
   {
     mWidget->setFilterFields( config( QStringLiteral( "FilterFields" ) ).toStringList() );
     mWidget->setChainFilters( config( QStringLiteral( "ChainFilters" ) ).toBool() );
+    mWidget->setFilterExpression( config( QStringLiteral( "FilterExpression" ) ).toString() );
   }
   mWidget->setAllowAddFeatures( config( QStringLiteral( "AllowAddFeatures" ), false ).toBool() );
 
   const QVariant relationName = config( QStringLiteral( "Relation" ) );
 
+  // Store relation data source and provider key
+  mWidget->setReferencedLayerDataSource( config( QStringLiteral( "ReferencedLayerDataSource" ) ).toString() );
+  mWidget->setReferencedLayerProviderKey( config( QStringLiteral( "ReferencedLayerProviderKey" ) ).toString() );
+  mWidget->setReferencedLayerId( config( QStringLiteral( "ReferencedLayerId" ) ).toString() );
+  mWidget->setReferencedLayerName( config( QStringLiteral( "ReferencedLayerName" ) ).toString() );
+
   QgsRelation relation; // invalid relation by default
   if ( relationName.isValid() )
     relation = QgsProject::instance()->relationManager()->relation( relationName.toString() );
-  else if ( ! layer()->referencingRelations( fieldIdx() ).isEmpty() )
+  if ( !relation.isValid() && !layer()->referencingRelations( fieldIdx() ).isEmpty() )
     relation = layer()->referencingRelations( fieldIdx() )[0];
 
   // If this widget is already embedded by the same relation, reduce functionality
@@ -82,6 +90,7 @@ void QgsRelationReferenceWidgetWrapper::initWidget( QWidget *editor )
       mWidget->setReadOnlySelector( true );
       mWidget->setAllowMapIdentification( false );
       mWidget->setOpenFormButtonVisible( false );
+      mWidget->setAllowAddFeatures( false );
       break;
     }
     ctx = ctx->parentContext();
@@ -196,6 +205,7 @@ void QgsRelationReferenceWidgetWrapper::updateValues( const QVariant &val, const
   Q_ASSERT( values.count() == fieldPairs.count() );
 
   mWidget->setForeignKeys( values );
+  mWidget->setFormFeature( formFeature() );
 }
 
 void QgsRelationReferenceWidgetWrapper::setEnabled( bool enabled )

@@ -183,6 +183,7 @@ void QgsEllipseSymbolLayer::renderPoint( QPointF point, QgsSymbolRenderContext &
       {
         width = context.renderContext().convertToPainterUnits( width, mStrokeWidthUnit, mStrokeWidthMapUnitScale );
         mPen.setWidthF( width );
+        mSelPen.setWidthF( width );
       }
     }
 
@@ -191,6 +192,7 @@ void QgsEllipseSymbolLayer::renderPoint( QPointF point, QgsSymbolRenderContext &
     if ( exprVal.isValid() )
     {
       mPen.setStyle( QgsSymbolLayerUtils::decodePenStyle( exprVal.toString() ) );
+      mSelPen.setStyle( mPen.style() );
     }
 
     context.setOriginalValueVariable( QgsSymbolLayerUtils::encodePenJoinStyle( mPenJoinStyle ) );
@@ -198,6 +200,7 @@ void QgsEllipseSymbolLayer::renderPoint( QPointF point, QgsSymbolRenderContext &
     if ( exprVal.isValid() )
     {
       mPen.setJoinStyle( QgsSymbolLayerUtils::decodePenJoinStyle( exprVal.toString() ) );
+      mSelPen.setJoinStyle( mPen.joinStyle() );
     }
 
     context.setOriginalValueVariable( QgsSymbolLayerUtils::encodeColor( mColor ) );
@@ -238,8 +241,8 @@ void QgsEllipseSymbolLayer::renderPoint( QPointF point, QgsSymbolRenderContext &
     transform.rotate( angle );
   }
 
-  p->setPen( mPen );
-  p->setBrush( mBrush );
+  p->setPen( context.selected() ? mSelPen : mPen );
+  p->setBrush( context.selected() ? mSelBrush : mBrush );
   p->drawPath( transform.map( mPainterPath ) );
 }
 
@@ -308,6 +311,18 @@ void QgsEllipseSymbolLayer::startRender( QgsSymbolRenderContext &context )
   mPen.setJoinStyle( mPenJoinStyle );
   mPen.setWidthF( context.renderContext().convertToPainterUnits( mStrokeWidth, mStrokeWidthUnit, mStrokeWidthMapUnitScale ) );
   mBrush.setColor( mColor );
+
+  QColor selBrushColor = context.renderContext().selectionColor();
+  QColor selPenColor = selBrushColor == mColor ? selBrushColor : mStrokeColor;
+  if ( context.opacity() < 1  && !SELECTION_IS_OPAQUE )
+  {
+    selBrushColor.setAlphaF( context.opacity() );
+    selPenColor.setAlphaF( context.opacity() );
+  }
+  mSelBrush = QBrush( selBrushColor );
+  mSelPen = QPen( selPenColor );
+  mSelPen.setStyle( mStrokeStyle );
+  mSelPen.setWidthF( context.renderContext().convertToPainterUnits( mStrokeWidth, mStrokeWidthUnit, mStrokeWidthMapUnitScale ) );
 }
 
 void QgsEllipseSymbolLayer::stopRender( QgsSymbolRenderContext & )
@@ -416,7 +431,7 @@ void QgsEllipseSymbolLayer::writeSldMarker( QDomDocument &doc, QDomElement &elem
 
 QgsSymbolLayer *QgsEllipseSymbolLayer::createFromSld( QDomElement &element )
 {
-  QgsDebugMsg( QStringLiteral( "Entered." ) );
+  QgsDebugMsgLevel( QStringLiteral( "Entered." ), 4 );
 
   QDomElement graphicElem = element.firstChildElement( QStringLiteral( "Graphic" ) );
   if ( graphicElem.isNull() )
@@ -674,7 +689,7 @@ QRectF QgsEllipseSymbolLayer::bounds( QPointF point, QgsSymbolRenderContext &con
   if ( !qgsDoubleNear( angle, 0.0 ) )
     transform.rotate( angle );
 
-  double penWidth = 0.0;
+  double penWidth = mStrokeWidth;
   if ( mDataDefinedProperties.isActive( QgsSymbolLayer::PropertyStrokeWidth ) )
   {
     context.setOriginalValueVariable( mStrokeWidth );
@@ -686,10 +701,12 @@ QRectF QgsEllipseSymbolLayer::bounds( QPointF point, QgsSymbolRenderContext &con
       double strokeWidth = exprVal.toDouble( &ok );
       if ( ok )
       {
-        penWidth = context.renderContext().convertToPainterUnits( strokeWidth, mStrokeWidthUnit, mStrokeWidthMapUnitScale );
+        penWidth = strokeWidth;
       }
     }
   }
+  penWidth = context.renderContext().convertToPainterUnits( penWidth, mStrokeWidthUnit, mStrokeWidthMapUnitScale );
+
   if ( mDataDefinedProperties.isActive( QgsSymbolLayer::PropertyStrokeStyle ) )
   {
     context.setOriginalValueVariable( QgsSymbolLayerUtils::encodePenStyle( mStrokeStyle ) );
@@ -699,6 +716,8 @@ QRectF QgsEllipseSymbolLayer::bounds( QPointF point, QgsSymbolRenderContext &con
       penWidth = 0.0;
     }
   }
+  else if ( mStrokeStyle == Qt::NoPen )
+    penWidth = 0;
 
   //antialiasing, add 1 pixel
   penWidth += 1;

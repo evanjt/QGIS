@@ -94,13 +94,8 @@ class TestQgsPointDisplacementRenderer(unittest.TestCase):
         return layer, renderer, mapsettings
 
     def _tearDown(self, layer):
-        #QgsProject.instance().removeAllMapLayers()
+        # QgsProject.instance().removeAllMapLayers()
         QgsProject.instance().removeMapLayer(layer)
-
-    @classmethod
-    def tearDownClass(cls):
-        # avoid crash on finish, probably related to https://bugreports.qt.io/browse/QTBUG-35760
-        QThreadPool.globalInstance().waitForDone()
 
     def _setProperties(self, r):
         """ set properties for a renderer for testing with _checkProperties"""
@@ -235,8 +230,10 @@ class TestQgsPointDisplacementRenderer(unittest.TestCase):
         old_marker = layer.renderer().centerSymbol().clone()
 
         new_marker = QgsMarkerSymbol.createSimple({'color': '#ffff00', 'size': '3', 'outline_style': 'no'})
-        new_marker.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.PropertyFillColor, QgsProperty.fromExpression('@cluster_color'))
-        new_marker.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.PropertySize, QgsProperty.fromExpression('@cluster_size*2'))
+        new_marker.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.PropertyFillColor,
+                                                         QgsProperty.fromExpression('@cluster_color'))
+        new_marker.symbolLayer(0).setDataDefinedProperty(QgsSymbolLayer.PropertySize,
+                                                         QgsProperty.fromExpression('@cluster_size*2'))
         layer.renderer().setCenterSymbol(new_marker)
         renderchecker = QgsMultiRenderChecker()
         renderchecker.setMapSettings(mapsettings)

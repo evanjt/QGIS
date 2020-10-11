@@ -27,11 +27,11 @@
 #include <sqlite3.h>
 #include <QFile>
 
-const QString AS_JOINFIELD = "ASPK";
-const QString AS_EXTENSION = "qgd";
-const QString AS_JOINPREFIX = "auxiliary_storage_";
-
-const QVector<QgsPalLayerSettings::Property> palHiddenProperties
+#define AS_JOINFIELD QStringLiteral( "ASPK" )
+#define AS_EXTENSION QStringLiteral( "qgd" )
+#define AS_JOINPREFIX QStringLiteral( "auxiliary_storage_" )
+typedef QVector<QgsPalLayerSettings::Property> PalPropertyList;
+Q_GLOBAL_STATIC_WITH_ARGS( PalPropertyList, palHiddenProperties, (
 {
   QgsPalLayerSettings::PositionX,
   QgsPalLayerSettings::PositionY,
@@ -47,6 +47,7 @@ const QVector<QgsPalLayerSettings::Property> palHiddenProperties
   QgsPalLayerSettings::Strikeout,
   QgsPalLayerSettings::MultiLineAlignment,
   QgsPalLayerSettings::BufferSize,
+  QgsPalLayerSettings::BufferDraw,
   QgsPalLayerSettings::BufferColor,
   QgsPalLayerSettings::LabelDistance,
   QgsPalLayerSettings::Hali,
@@ -57,7 +58,7 @@ const QVector<QgsPalLayerSettings::Property> palHiddenProperties
   QgsPalLayerSettings::AlwaysShow,
   QgsPalLayerSettings::CalloutDraw,
   QgsPalLayerSettings::LabelAllParts
-};
+} ) )
 
 //
 // QgsAuxiliaryLayer
@@ -78,7 +79,7 @@ QgsAuxiliaryLayer::QgsAuxiliaryLayer( const QString &pkField, const QString &fil
   mJoinInfo.setEditable( true );
   mJoinInfo.setUpsertOnEdit( true );
   mJoinInfo.setCascadedDelete( true );
-  mJoinInfo.setJoinFieldNamesBlackList( QStringList() << QStringLiteral( "rowid" ) ); // introduced by ogr provider
+  mJoinInfo.setJoinFieldNamesBlockList( QStringList() << QStringLiteral( "rowid" ) ); // introduced by ogr provider
 }
 
 QgsAuxiliaryLayer *QgsAuxiliaryLayer::clone( QgsVectorLayer *target ) const
@@ -289,7 +290,8 @@ bool QgsAuxiliaryLayer::isHiddenProperty( int index ) const
 
   if ( def.origin().compare( QLatin1String( "labeling" ) ) == 0 )
   {
-    for ( const QgsPalLayerSettings::Property &p : palHiddenProperties )
+    const PalPropertyList &palProps = *palHiddenProperties();
+    for ( const QgsPalLayerSettings::Property &p : palProps )
     {
       const QString propName = QgsPalLayerSettings::propertyDefinitions()[ p ].name();
       if ( propName.compare( def.name() ) == 0 )
@@ -845,7 +847,7 @@ QgsDataSourceUri QgsAuxiliaryStorage::parseOgrUri( const QgsDataSourceUri &uri )
   if ( tableParts.count() < 1 )
     return newUri;
 
-  const QString tableName = tableParts[0].replace( QStringLiteral( "layername=" ), QString() );
+  const QString tableName = tableParts[0].replace( QLatin1String( "layername=" ), QString() );
 
   newUri.setDataSource( QString(), tableName, QString() );
   newUri.setDatabase( databasePath );

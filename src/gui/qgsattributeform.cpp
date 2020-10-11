@@ -20,6 +20,7 @@
 #include "qgsattributeformrelationeditorwidget.h"
 #include "qgseditorwidgetregistry.h"
 #include "qgsfeatureiterator.h"
+#include "qgsgui.h"
 #include "qgsproject.h"
 #include "qgspythonrunner.h"
 #include "qgsrelationwidgetwrapper.h"
@@ -34,7 +35,6 @@
 #include "qgstabwidget.h"
 #include "qgssettings.h"
 #include "qgsscrollarea.h"
-#include "qgsgui.h"
 #include "qgsvectorlayerjoinbuffer.h"
 #include "qgsvectorlayerutils.h"
 #include "qgsqmlwidgetwrapper.h"
@@ -42,6 +42,8 @@
 #include "qgsapplication.h"
 #include "qgsexpressioncontextutils.h"
 #include "qgsfeaturerequest.h"
+#include "qgstexteditwrapper.h"
+#include "qgsfieldmodel.h"
 
 #include <QDir>
 #include <QTextStream>
@@ -84,6 +86,8 @@ QgsAttributeForm::QgsAttributeForm( QgsVectorLayer *vl, const QgsFeature &featur
   connect( this, &QgsAttributeForm::modeChanged, this, &QgsAttributeForm::updateContainersVisibility );
 
   updateContainersVisibility();
+  updateLabels();
+
 }
 
 QgsAttributeForm::~QgsAttributeForm()
@@ -170,6 +174,10 @@ void QgsAttributeForm::setMode( QgsAttributeEditorContext::Mode mode )
         w->setMode( QgsAttributeFormWidget::DefaultMode );
         break;
 
+      case QgsAttributeEditorContext::FixAttributeMode:
+        w->setMode( QgsAttributeFormWidget::DefaultMode );
+        break;
+
       case QgsAttributeEditorContext::MultiEditMode:
         w->setMode( QgsAttributeFormWidget::MultiEditMode );
         break;
@@ -213,6 +221,11 @@ void QgsAttributeForm::setMode( QgsAttributeEditorContext::Mode mode )
       mSearchButtonBox->setVisible( false );
       break;
 
+    case QgsAttributeEditorContext::FixAttributeMode:
+      synchronizeEnabledState();
+      mSearchButtonBox->setVisible( false );
+      break;
+
     case QgsAttributeEditorContext::MultiEditMode:
       resetMultiEdit( false );
       synchronizeEnabledState();
@@ -244,20 +257,23 @@ void QgsAttributeForm::changeAttribute( const QString &field, const QVariant &va
   for ( QgsWidgetWrapper *ww : constMWidgets )
   {
     QgsEditorWidgetWrapper *eww = qobject_cast<QgsEditorWidgetWrapper *>( ww );
-    if ( eww && eww->field().name() == field )
+    if ( eww )
     {
-      eww->setValues( value, QVariantList() );
-      eww->setHint( hintText );
-    }
-    // see if the field is present in additional fields of the editor widget
-    int index = eww->additionalFields().indexOf( field );
-    if ( index >= 0 )
-    {
-      QVariant mainValue = eww->value();
-      QVariantList additionalFieldValues = eww->additionalFieldValues();
-      additionalFieldValues[index] = value;
-      eww->setValues( mainValue, additionalFieldValues );
-      eww->setHint( hintText );
+      if ( eww->field().name() == field )
+      {
+        eww->setValues( value, QVariantList() );
+        eww->setHint( hintText );
+      }
+      // see if the field is present in additional fields of the editor widget
+      int index = eww->additionalFields().indexOf( field );
+      if ( index >= 0 )
+      {
+        QVariant mainValue = eww->value();
+        QVariantList additionalFieldValues = eww->additionalFieldValues();
+        additionalFieldValues[index] = value;
+        eww->setValues( mainValue, additionalFieldValues );
+        eww->setHint( hintText );
+      }
     }
   }
 }
@@ -266,12 +282,14 @@ void QgsAttributeForm::setFeature( const QgsFeature &feature )
 {
   mIsSettingFeature = true;
   mFeature = feature;
+  mCurrentFormFeature = feature;
 
   switch ( mMode )
   {
     case QgsAttributeEditorContext::SingleEditMode:
     case QgsAttributeEditorContext::IdentifyMode:
     case QgsAttributeEditorContext::AddFeatureMode:
+    case QgsAttributeEditorContext::FixAttributeMode:
     {
       resetValues();
 
@@ -308,14 +326,13 @@ bool QgsAttributeForm::saveEdits()
   bool changedLayer = false;
 
   QgsFeature updatedFeature = QgsFeature( mFeature );
-
   if ( mFeature.isValid() || mMode == QgsAttributeEditorContext::AddFeatureMode )
   {
     bool doUpdate = false;
 
     // An add dialog should perform an action by default
     // and not only if attributes have "changed"
-    if ( mMode == QgsAttributeEditorContext::AddFeatureMode )
+    if ( mMode == QgsAttributeEditorContext::AddFeatureMode || mMode == QgsAttributeEditorContext::FixAttributeMode )
       doUpdate = true;
 
     QgsAttributes src = mFeature.attributes();
@@ -326,6 +343,12 @@ bool QgsAttributeForm::saveEdits()
       QgsEditorWidgetWrapper *eww = qobject_cast<QgsEditorWidgetWrapper *>( ww );
       if ( eww )
       {
+        // check for invalid JSON values
+        QgsTextEditWrapper *text_edit = qobject_cast<QgsTextEditWrapper *>( eww );
+        if ( text_edit && text_edit->isInvalidJSON() )
+        {
+          return false;
+        }
         QVariantList dstVars = QVariantList() << dst.at( eww->fieldIdx() );
         QVariantList srcVars = QVariantList() << eww->value();
         QList<int> fieldIndexes = QList<int>() << eww->fieldIdx();
@@ -345,7 +368,7 @@ bool QgsAttributeForm::saveEdits()
         for ( int i = 0; i < dstVars.count(); i++ )
         {
 
-          if ( !qgsVariantEqual( dstVars[i], srcVars[i] ) && srcVars[i].isValid() && fieldIsEditable( fieldIndexes[i] ) )
+          if ( !qgsVariantEqual( dstVars[i], srcVars[i] ) && srcVars[i].isValid() )
           {
             dst[fieldIndexes[i]] = srcVars[i];
 
@@ -368,7 +391,11 @@ bool QgsAttributeForm::saveEdits()
 
     if ( doUpdate )
     {
-      if ( mMode == QgsAttributeEditorContext::AddFeatureMode )
+      if ( mMode == QgsAttributeEditorContext::FixAttributeMode )
+      {
+        mFeature = updatedFeature;
+      }
+      else if ( mMode == QgsAttributeEditorContext::AddFeatureMode )
       {
         mFeature.setValid( true );
         mLayer->beginEditCommand( mEditCommandMessage );
@@ -400,11 +427,11 @@ bool QgsAttributeForm::saveEdits()
             continue;
           }
 
-          QgsDebugMsg( QStringLiteral( "Updating field %1" ).arg( i ) );
-          QgsDebugMsg( QStringLiteral( "dst:'%1' (type:%2, isNull:%3, isValid:%4)" )
-                       .arg( dst.at( i ).toString(), dst.at( i ).typeName() ).arg( dst.at( i ).isNull() ).arg( dst.at( i ).isValid() ) );
-          QgsDebugMsg( QStringLiteral( "src:'%1' (type:%2, isNull:%3, isValid:%4)" )
-                       .arg( src.at( i ).toString(), src.at( i ).typeName() ).arg( src.at( i ).isNull() ).arg( src.at( i ).isValid() ) );
+          QgsDebugMsgLevel( QStringLiteral( "Updating field %1" ).arg( i ), 2 );
+          QgsDebugMsgLevel( QStringLiteral( "dst:'%1' (type:%2, isNull:%3, isValid:%4)" )
+                            .arg( dst.at( i ).toString(), dst.at( i ).typeName() ).arg( dst.at( i ).isNull() ).arg( dst.at( i ).isValid() ), 2 );
+          QgsDebugMsgLevel( QStringLiteral( "src:'%1' (type:%2, isNull:%3, isValid:%4)" )
+                            .arg( src.at( i ).toString(), src.at( i ).typeName() ).arg( src.at( i ).isNull() ).arg( src.at( i ).isValid() ), 2 );
 
           newValues[i] = dst.at( i );
           oldValues[i] = src.at( i );
@@ -443,6 +470,10 @@ bool QgsAttributeForm::saveEdits()
 
 bool QgsAttributeForm::updateDefaultValues( const int originIdx )
 {
+
+  // Synchronize
+  updateDefaultValueDependencies();
+
   if ( !mDefaultValueDependencies.contains( originIdx ) )
     return false;
 
@@ -501,7 +532,8 @@ bool QgsAttributeForm::updateDefaultValues( const int originIdx )
         if ( mAlreadyUpdatedFields.contains( eww->fieldIdx() ) )
           continue;
 
-        QString value = mLayer->defaultValue( eww->fieldIdx(), updatedFeature ).toString();
+        QgsExpressionContext context = createExpressionContext( updatedFeature );
+        QString value = mLayer->defaultValue( eww->fieldIdx(), updatedFeature, &context ).toString();
         eww->setValue( value );
       }
     }
@@ -589,6 +621,14 @@ void QgsAttributeForm::pushSelectedFeaturesMessage()
                               Qgis::Warning,
                               messageTimeout() );
   }
+}
+
+void QgsAttributeForm::displayWarning( const QString &message )
+{
+  mMessageBar->pushMessage( QString(),
+                            message,
+                            Qgis::Warning,
+                            messageTimeout() );
 }
 
 void QgsAttributeForm::runSearchSelect( QgsVectorLayer::SelectBehavior behavior )
@@ -712,6 +752,7 @@ bool QgsAttributeForm::save()
   {
     case QgsAttributeEditorContext::SingleEditMode:
     case QgsAttributeEditorContext::IdentifyMode:
+    case QgsAttributeEditorContext::FixAttributeMode:
     case QgsAttributeEditorContext::MultiEditMode:
       if ( !mDirty )
         return true;
@@ -738,6 +779,7 @@ bool QgsAttributeForm::save()
     case QgsAttributeEditorContext::SingleEditMode:
     case QgsAttributeEditorContext::IdentifyMode:
     case QgsAttributeEditorContext::AddFeatureMode:
+    case QgsAttributeEditorContext::FixAttributeMode:
     case QgsAttributeEditorContext::SearchMode:
     case QgsAttributeEditorContext::AggregateSearchMode:
       success = saveEdits();
@@ -805,8 +847,19 @@ QString QgsAttributeForm::createFilterExpression() const
   if ( filters.isEmpty() )
     return QString();
 
-  QString filter = filters.join( QStringLiteral( ") AND (" ) ).prepend( '(' ).append( ')' );
+  QString filter = filters.join( QLatin1String( ") AND (" ) ).prepend( '(' ).append( ')' );
   return filter;
+}
+
+QgsExpressionContext QgsAttributeForm::createExpressionContext( const QgsFeature &feature ) const
+{
+  QgsExpressionContext context;
+  context.appendScopes( QgsExpressionContextUtils::globalProjectLayerScopes( mLayer ) );
+  context.appendScope( QgsExpressionContextUtils::formScope( feature, mContext.attributeFormModeString() ) );
+  if ( mExtraContextScope )
+    context.appendScope( new QgsExpressionContextScope( *mExtraContextScope.get() ) );
+  context.setFeature( feature );
+  return context;
 }
 
 
@@ -820,11 +873,14 @@ void QgsAttributeForm::onAttributeChanged( const QVariant &value, const QVariant
   if ( mValuesInitialized )
     mDirty = true;
 
+  mCurrentFormFeature.setAttribute( eww->field().name(), value );
+
   switch ( mMode )
   {
     case QgsAttributeEditorContext::SingleEditMode:
     case QgsAttributeEditorContext::IdentifyMode:
     case QgsAttributeEditorContext::AddFeatureMode:
+    case QgsAttributeEditorContext::FixAttributeMode:
     {
       Q_NOWARN_DEPRECATED_PUSH
       emit attributeChanged( eww->field().name(), value );
@@ -877,6 +933,9 @@ void QgsAttributeForm::onAttributeChanged( const QVariant &value, const QVariant
   updateDefaultValues( eww->fieldIdx() );
   mAlreadyUpdatedFields.removeAll( eww->fieldIdx() );
 
+  // Updates expression controlled labels
+  updateLabels();
+
   if ( !signalEmitted )
   {
     Q_NOWARN_DEPRECATED_PUSH
@@ -901,7 +960,7 @@ void QgsAttributeForm::updateConstraints( QgsEditorWidgetWrapper *eww )
 {
   // get the current feature set in the form
   QgsFeature ft;
-  if ( currentFormFeature( ft ) )
+  if ( currentFormValuesFeature( ft ) )
   {
     // if the layer is NOT being edited then we only check layer based constraints, and not
     // any constraints enforced by the provider. Because:
@@ -924,28 +983,26 @@ void QgsAttributeForm::updateConstraints( QgsEditorWidgetWrapper *eww )
     // sync OK button status
     synchronizeEnabledState();
 
-    mExpressionContext.setFeature( ft );
-
-    mExpressionContext << QgsExpressionContextUtils::formScope( ft, mContext.attributeFormModeString() );
+    QgsExpressionContext context = createExpressionContext( ft );
 
     // Recheck visibility for all containers which are controlled by this value
     const QVector<ContainerInformation *> infos = mContainerInformationDependency.value( eww->field().name() );
     for ( ContainerInformation *info : infos )
     {
-      info->apply( &mExpressionContext );
+      info->apply( &context );
     }
   }
 }
 
 void QgsAttributeForm::updateContainersVisibility()
 {
-  mExpressionContext << QgsExpressionContextUtils::formScope( QgsFeature( mFeature ), mContext.attributeFormModeString() );
+  QgsExpressionContext context = createExpressionContext( mFeature );
 
   const QVector<ContainerInformation *> infos = mContainerVisibilityInformation;
 
   for ( ContainerInformation *info : infos )
   {
-    info->apply( &mExpressionContext );
+    info->apply( &context );
   }
 
   //and update the constraints
@@ -980,7 +1037,30 @@ void QgsAttributeForm::updateConstraint( const QgsFeature &ft, QgsEditorWidgetWr
   eww->updateConstraint( ft, constraintOrigin );
 }
 
-bool QgsAttributeForm::currentFormFeature( QgsFeature &feature )
+void QgsAttributeForm::updateLabels()
+{
+  if ( ! mLabelDataDefinedProperties.isEmpty() )
+  {
+    QgsFeature currentFeature;
+    if ( currentFormValuesFeature( currentFeature ) )
+    {
+      QgsExpressionContext context = createExpressionContext( currentFeature );
+
+      for ( auto it = mLabelDataDefinedProperties.constBegin() ; it != mLabelDataDefinedProperties.constEnd(); ++it )
+      {
+        QLabel *label { it.key() };
+        bool ok;
+        const QString value { it->valueAsString( context, QString(), &ok ) };
+        if ( ok && ! value.isEmpty() )
+        {
+          label->setText( value );
+        }
+      }
+    }
+  }
+}
+
+bool QgsAttributeForm::currentFormValuesFeature( QgsFeature &feature )
 {
   bool rc = true;
   feature = QgsFeature( mFeature );
@@ -1204,6 +1284,18 @@ void QgsAttributeForm::refreshFeature()
   setFeature( mFeature );
 }
 
+void QgsAttributeForm::parentFormValueChanged( const QString &attribute, const QVariant &newValue )
+{
+  for ( QgsWidgetWrapper *ww : qgis::as_const( mWidgets ) )
+  {
+    QgsEditorWidgetWrapper *eww = qobject_cast<QgsEditorWidgetWrapper *>( ww );
+    if ( eww )
+    {
+      eww->parentFormValueChanged( attribute, newValue );
+    }
+  }
+}
+
 void QgsAttributeForm::synchronizeEnabledState()
 {
   bool isEditable = ( mFeature.isValid()
@@ -1275,7 +1367,6 @@ void QgsAttributeForm::init()
   delete layout();
 
   QVBoxLayout *vl = new QVBoxLayout();
-  vl->setMargin( 0 );
   vl->setContentsMargins( 0, 0, 0, 0 );
   mMessageBar = new QgsMessageBar( this );
   mMessageBar->setSizePolicy( QSizePolicy::MinimumExpanding, QSizePolicy::Fixed );
@@ -1412,6 +1503,25 @@ void QgsAttributeForm::init()
           layout->addWidget( label, row, column++ );
           layout->addWidget( widgetInfo.widget, row, column++ );
         }
+
+        // Alias DD overrides
+        if ( widgDef->type() == QgsAttributeEditorElement::AttributeEditorType::AeTypeField )
+        {
+          const QgsAttributeEditorField *fieldElement { static_cast<QgsAttributeEditorField *>( widgDef ) };
+          const int fieldIdx = fieldElement->idx();
+          if ( fieldIdx >= 0 && fieldIdx < mLayer->fields().count() )
+          {
+            const QString fieldName { mLayer->fields().at( fieldIdx ).name() };
+            if ( mLayer->editFormConfig().dataDefinedFieldProperties( fieldName ).hasProperty( QgsEditFormConfig::DataDefinedProperty::Alias ) )
+            {
+              const QgsProperty property { mLayer->editFormConfig().dataDefinedFieldProperties( fieldName ).property( QgsEditFormConfig::DataDefinedProperty::Alias ) };
+              if ( property.isActive() && ! property.expressionString().isEmpty() )
+              {
+                mLabelDataDefinedProperties[ label ] = property;
+              }
+            }
+          }
+        }
       }
 
       if ( column >= columnCount * 2 )
@@ -1462,7 +1572,7 @@ void QgsAttributeForm::init()
       //show attribute alias if available
       QString fieldName = mLayer->attributeDisplayName( idx );
       QString labelText = fieldName;
-      labelText.replace( '&', QStringLiteral( "&&" ) ); // need to escape '&' or they'll be replace by _ in the label text
+      labelText.replace( '&', QLatin1String( "&&" ) ); // need to escape '&' or they'll be replace by _ in the label text
 
       const QgsEditorWidgetSetup widgetSetup = QgsGui::editorWidgetRegistry()->findBest( mLayer, field.name() );
 
@@ -1472,10 +1582,19 @@ void QgsAttributeForm::init()
       bool labelOnTop = mLayer->editFormConfig().labelOnTop( idx );
 
       // This will also create the widget
-      QLabel *l = new QLabel( labelText );
-      l->setToolTip( QStringLiteral( "<b>%1</b><p>%2</p>" ).arg( fieldName, field.comment() ) );
+      QLabel *label = new QLabel( labelText );
+      label->setToolTip( QgsFieldModel::fieldToolTipExtended( field, mLayer ) );
       QSvgWidget *i = new QSvgWidget();
       i->setFixedSize( 18, 18 );
+
+      if ( mLayer->editFormConfig().dataDefinedFieldProperties( fieldName ).hasProperty( QgsEditFormConfig::DataDefinedProperty::Alias ) )
+      {
+        const QgsProperty property { mLayer->editFormConfig().dataDefinedFieldProperties( fieldName ).property( QgsEditFormConfig::DataDefinedProperty::Alias ) };
+        if ( property.isActive() && ! property.expressionString().isEmpty() )
+        {
+          mLabelDataDefinedProperties[ label ] = property;
+        }
+      }
 
       QgsEditorWidgetWrapper *eww = QgsGui::editorWidgetRegistry()->create( widgetSetup.type(), mLayer, idx, widgetSetup.config(), nullptr, this, mContext );
 
@@ -1488,7 +1607,7 @@ void QgsAttributeForm::init()
         mFormWidgets.append( formWidget );
         formWidget->createSearchWidgetWrappers( mContext );
 
-        l->setBuddy( eww->widget() );
+        label->setBuddy( eww->widget() );
       }
       else
       {
@@ -1507,16 +1626,17 @@ void QgsAttributeForm::init()
 
       if ( labelOnTop )
       {
-        gridLayout->addWidget( l, row++, 0, 1, 2 );
+        gridLayout->addWidget( label, row++, 0, 1, 2 );
         gridLayout->addWidget( w, row++, 0, 1, 2 );
         gridLayout->addWidget( i, row++, 0, 1, 2 );
       }
       else
       {
-        gridLayout->addWidget( l, row, 0 );
+        gridLayout->addWidget( label, row, 0 );
         gridLayout->addWidget( w, row, 1 );
         gridLayout->addWidget( i, row++, 2 );
       }
+
     }
 
     const QList<QgsRelation> relations = QgsProject::instance()->relationManager()->referencedRelations( mLayer );
@@ -1541,32 +1661,7 @@ void QgsAttributeForm::init()
     }
   }
 
-  //create defaultValueDependencies
-  for ( QgsWidgetWrapper *ww : qgis::as_const( mWidgets ) )
-  {
-    QgsEditorWidgetWrapper *eww = qobject_cast<QgsEditorWidgetWrapper *>( ww );
-    if ( eww )
-    {
-      QgsExpression exp( eww->field().defaultValueDefinition().expression() );
-      const QSet<QString> referencedColumns = exp.referencedColumns();
-      for ( const QString &referencedColumn : referencedColumns )
-      {
-        if ( referencedColumn == QgsFeatureRequest::ALL_ATTRIBUTES )
-        {
-          const QList<int> allAttributeIds( mLayer->fields().allAttributesList() );
-
-          for ( const int id : allAttributeIds )
-          {
-            mDefaultValueDependencies.insertMulti( id, eww );
-          }
-        }
-        else
-        {
-          mDefaultValueDependencies.insertMulti( mLayer->fields().lookupField( referencedColumn ), eww );
-        }
-      }
-    }
-  }
+  updateDefaultValueDependencies();
 
   if ( !mButtonBox )
   {
@@ -1580,7 +1675,6 @@ void QgsAttributeForm::init()
   {
     mSearchButtonBox = new QWidget();
     QHBoxLayout *boxLayout = new QHBoxLayout();
-    boxLayout->setMargin( 0 );
     boxLayout->setContentsMargins( 0, 0, 0, 0 );
     mSearchButtonBox->setLayout( boxLayout );
     mSearchButtonBox->setObjectName( QStringLiteral( "searchButtonBox" ) );
@@ -1712,16 +1806,16 @@ void QgsAttributeForm::initPython()
     switch ( mLayer->editFormConfig().initCodeSource() )
     {
       case QgsEditFormConfig::CodeSourceFile:
-        if ( ! initFilePath.isEmpty() )
+        if ( !initFilePath.isEmpty() )
         {
-          QFile inputFile( initFilePath );
+          QFile *inputFile = QgsApplication::instance()->networkContentFetcherRegistry()->localFile( initFilePath );
 
-          if ( inputFile.open( QFile::ReadOnly ) )
+          if ( inputFile && inputFile->open( QFile::ReadOnly ) )
           {
             // Read it into a string
-            QTextStream inf( &inputFile );
+            QTextStream inf( inputFile );
             initCode = inf.readAll();
-            inputFile.close();
+            inputFile->close();
           }
           else // The file couldn't be opened
           {
@@ -1744,22 +1838,27 @@ void QgsAttributeForm::initPython()
 
       case QgsEditFormConfig::CodeSourceEnvironment:
       case QgsEditFormConfig::CodeSourceNone:
-      default:
         // Nothing to do: the function code should be already in the environment
         break;
     }
 
     // If we have a function code, run it
-    if ( ! initCode.isEmpty() )
+    if ( !initCode.isEmpty() )
     {
-      QgsPythonRunner::run( initCode );
+      if ( QgsGui::pythonMacroAllowed() )
+        QgsPythonRunner::run( initCode );
+      else
+        mMessageBar->pushMessage( QString(),
+                                  tr( "Python macro could not be run due to missing permissions." ),
+                                  Qgis::MessageLevel::Warning,
+                                  messageTimeout() );
     }
 
     QgsPythonRunner::run( QStringLiteral( "import inspect" ) );
     QString numArgs;
 
     // Check for eval result
-    if ( QgsPythonRunner::eval( QStringLiteral( "len(inspect.getargspec(%1)[0])" ).arg( initFunction ), numArgs ) )
+    if ( QgsPythonRunner::eval( QStringLiteral( "len(inspect.getfullargspec(%1)[0])" ).arg( initFunction ), numArgs ) )
     {
       static int sFormId = 0;
       mPyFormVarName = QStringLiteral( "_qgis_featureform_%1_%2" ).arg( mFormNr ).arg( sFormId++ );
@@ -1837,7 +1936,7 @@ QgsAttributeForm::WidgetInfo QgsAttributeForm::createWidgetFromDef( const QgsAtt
 
       newWidgetInfo.labelOnTop = mLayer->editFormConfig().labelOnTop( fldIdx );
       newWidgetInfo.labelText = mLayer->attributeDisplayName( fldIdx );
-      newWidgetInfo.labelText.replace( '&', QStringLiteral( "&&" ) ); // need to escape '&' or they'll be replace by _ in the label text
+      newWidgetInfo.labelText.replace( '&', QLatin1String( "&&" ) ); // need to escape '&' or they'll be replace by _ in the label text
       newWidgetInfo.toolTip = QStringLiteral( "<b>%1</b><p>%2</p>" ).arg( mLayer->attributeDisplayName( fldIdx ), newWidgetInfo.hint );
       newWidgetInfo.showLabel = widgetDef->showLabel();
 
@@ -1850,17 +1949,23 @@ QgsAttributeForm::WidgetInfo QgsAttributeForm::createWidgetFromDef( const QgsAtt
 
       QgsRelationWidgetWrapper *rww = setupRelationWidgetWrapper( relDef->relation(), context );
 
-      rww->setShowLabel( relDef->showLabel() );
-      rww->setShowLinkButton( relDef->showLinkButton() );
-      rww->setShowUnlinkButton( relDef->showUnlinkButton() );
-
       QgsAttributeFormRelationEditorWidget *formWidget = new QgsAttributeFormRelationEditorWidget( rww, this );
       formWidget->createSearchWidgetWrappers( mContext );
+
+      // This needs to be after QgsAttributeFormRelationEditorWidget creation, because the widget
+      // does not exists yet until QgsAttributeFormRelationEditorWidget is created and the setters
+      // below directly alter the widget and check for it.
+      rww->setVisibleButtons( relDef->visibleButtons() );
+      rww->setShowLabel( relDef->showLabel() );
+      rww->setNmRelationId( relDef->nmRelationId() );
+      rww->setForceSuppressFormPopup( relDef->forceSuppressFormPopup() );
+      rww->setLabel( relDef->label() );
 
       mWidgets.append( rww );
       mFormWidgets.append( formWidget );
 
       newWidgetInfo.widget = formWidget;
+      newWidgetInfo.showLabel = relDef->showLabel();
       newWidgetInfo.labelText = QString();
       newWidgetInfo.labelOnTop = true;
       break;
@@ -1945,6 +2050,27 @@ QgsAttributeForm::WidgetInfo QgsAttributeForm::createWidgetFromDef( const QgsAtt
         else
         {
           QLabel *mypLabel = new QLabel( widgetInfo.labelText );
+
+          // Alias DD overrides
+          if ( childDef->type() == QgsAttributeEditorElement::AeTypeField )
+          {
+            const QgsAttributeEditorField *fieldDef { static_cast<QgsAttributeEditorField *>( childDef ) };
+            const QgsFields fields = vl->fields();
+            const int fldIdx = fieldDef->idx();
+            if ( fldIdx < fields.count() && fldIdx >= 0 )
+            {
+              const QString fieldName { fields.at( fldIdx ).name() };
+              if ( mLayer->editFormConfig().dataDefinedFieldProperties( fieldName ).hasProperty( QgsEditFormConfig::DataDefinedProperty::Alias ) )
+              {
+                const QgsProperty property { mLayer->editFormConfig().dataDefinedFieldProperties( fieldName ).property( QgsEditFormConfig::DataDefinedProperty::Alias ) };
+                if ( property.isActive() && ! property.expressionString().isEmpty() )
+                {
+                  mLabelDataDefinedProperties[ mypLabel ] = property;
+                }
+              }
+            }
+          }
+
           mypLabel->setToolTip( widgetInfo.toolTip );
           if ( columnCount > 1 && !widgetInfo.labelOnTop )
           {
@@ -1991,7 +2117,6 @@ QgsAttributeForm::WidgetInfo QgsAttributeForm::createWidgetFromDef( const QgsAtt
 
       QgsQmlWidgetWrapper *qmlWrapper = new QgsQmlWidgetWrapper( mLayer, nullptr, this );
       qmlWrapper->setQmlCode( elementDef->qmlCode() );
-      qmlWrapper->setConfig( mLayer->editFormConfig().widgetConfig( elementDef->name() ) );
       context.setAttributeFormMode( mMode );
       qmlWrapper->setContext( context );
 
@@ -2012,8 +2137,6 @@ QgsAttributeForm::WidgetInfo QgsAttributeForm::createWidgetFromDef( const QgsAtt
       context.setAttributeFormMode( mMode );
       htmlWrapper->setHtmlCode( elementDef->htmlCode() );
       htmlWrapper->reinitWidget();
-      htmlWrapper->setConfig( mLayer->editFormConfig().widgetConfig( elementDef->name() ) );
-
       mWidgets.append( htmlWrapper );
 
       newWidgetInfo.widget = htmlWrapper->widget();
@@ -2183,6 +2306,7 @@ void QgsAttributeForm::layerSelectionChanged()
     case QgsAttributeEditorContext::SingleEditMode:
     case QgsAttributeEditorContext::IdentifyMode:
     case QgsAttributeEditorContext::AddFeatureMode:
+    case QgsAttributeEditorContext::FixAttributeMode:
     case QgsAttributeEditorContext::SearchMode:
     case QgsAttributeEditorContext::AggregateSearchMode:
       break;
@@ -2296,7 +2420,12 @@ QString QgsAttributeForm::aggregateFilter() const
       filters << '(' + filter + ')';
   }
 
-  return filters.join( QStringLiteral( " AND " ) );
+  return filters.join( QLatin1String( " AND " ) );
+}
+
+void QgsAttributeForm::setExtraContextScope( QgsExpressionContextScope *extraScope )
+{
+  mExtraContextScope.reset( extraScope );
 }
 
 int QgsAttributeForm::messageTimeout()
@@ -2333,7 +2462,7 @@ void QgsAttributeForm::updateJoinedFields( const QgsEditorWidgetWrapper &eww )
   QgsField field = eww.layer()->fields().field( eww.fieldIdx() );
   QList<const QgsVectorLayerJoinInfo *> infos = eww.layer()->joinBuffer()->joinsWhereFieldIsId( field );
 
-  if ( infos.count() == 0 || !currentFormFeature( formFeature ) )
+  if ( infos.count() == 0 || !currentFormValuesFeature( formFeature ) )
     return;
 
   const QString hint = tr( "No feature joined" );
@@ -2390,28 +2519,38 @@ void QgsAttributeForm::updateJoinedFields( const QgsEditorWidgetWrapper &eww )
 
 bool QgsAttributeForm::fieldIsEditable( int fieldIndex ) const
 {
-  bool editable = false;
-
-  if ( mLayer->fields().fieldOrigin( fieldIndex ) == QgsFields::OriginJoin )
-  {
-    int srcFieldIndex;
-    const QgsVectorLayerJoinInfo *info = mLayer->joinBuffer()->joinForFieldIndex( fieldIndex, mLayer->fields(), srcFieldIndex );
-
-    if ( info && !info->hasUpsertOnEdit() && mMode == QgsAttributeEditorContext::AddFeatureMode )
-      editable = false;
-    else if ( info && info->isEditable() && info->joinLayer()->isEditable() )
-      editable = fieldIsEditable( *( info->joinLayer() ), srcFieldIndex, mFeature.id() );
-  }
-  else
-    editable = fieldIsEditable( *mLayer, fieldIndex, mFeature.id() );
-
-  return editable;
+  return QgsVectorLayerUtils::fieldIsEditable( mLayer, fieldIndex, mFeature );
 }
 
-bool QgsAttributeForm::fieldIsEditable( const QgsVectorLayer &layer, int fieldIndex,  QgsFeatureId fid ) const
+void QgsAttributeForm::updateDefaultValueDependencies()
 {
-  return !layer.editFormConfig().readOnly( fieldIndex ) &&
-         ( ( layer.dataProvider() && layer.dataProvider()->capabilities() & QgsVectorDataProvider::ChangeAttributeValues ) || FID_IS_NEW( fid ) );
+  mDefaultValueDependencies.clear();
+  //create defaultValueDependencies
+  for ( QgsWidgetWrapper *ww : qgis::as_const( mWidgets ) )
+  {
+    QgsEditorWidgetWrapper *eww = qobject_cast<QgsEditorWidgetWrapper *>( ww );
+    if ( eww )
+    {
+      QgsExpression exp( eww->field().defaultValueDefinition().expression() );
+      const QSet<QString> referencedColumns = exp.referencedColumns();
+      for ( const QString &referencedColumn : referencedColumns )
+      {
+        if ( referencedColumn == QgsFeatureRequest::ALL_ATTRIBUTES )
+        {
+          const QList<int> allAttributeIds( mLayer->fields().allAttributesList() );
+
+          for ( const int id : allAttributeIds )
+          {
+            mDefaultValueDependencies.insertMulti( id, eww );
+          }
+        }
+        else
+        {
+          mDefaultValueDependencies.insertMulti( mLayer->fields().lookupField( referencedColumn ), eww );
+        }
+      }
+    }
+  }
 }
 
 void QgsAttributeForm::updateIcon( QgsEditorWidgetWrapper *eww )

@@ -179,7 +179,10 @@ bool QgsCompoundCurve::fromWkt( const QString &wkt )
     return false;
   mWkbType = parts.first;
 
-  if ( parts.second.compare( QLatin1String( "EMPTY" ), Qt::CaseInsensitive ) == 0 )
+  QString secondWithoutParentheses = parts.second;
+  secondWithoutParentheses = secondWithoutParentheses.remove( '(' ).remove( ')' ).simplified().remove( ' ' );
+  if ( ( parts.second.compare( QLatin1String( "EMPTY" ), Qt::CaseInsensitive ) == 0 ) ||
+       secondWithoutParentheses.isEmpty() )
     return true;
 
   QString defaultChildWkbType = QStringLiteral( "LineString%1%2" ).arg( is3D() ? QStringLiteral( "Z" ) : QString(), isMeasure() ? QStringLiteral( "M" ) : QString() );
@@ -224,14 +227,14 @@ bool QgsCompoundCurve::fromWkt( const QString &wkt )
   return true;
 }
 
-QByteArray QgsCompoundCurve::asWkb() const
+QByteArray QgsCompoundCurve::asWkb( WkbFlags flags ) const
 {
   int binarySize = sizeof( char ) + sizeof( quint32 ) + sizeof( quint32 );
   QVector<QByteArray> wkbForCurves;
   wkbForCurves.reserve( mCurves.size() );
   for ( const QgsCurve *curve : mCurves )
   {
-    QByteArray wkbForCurve = curve->asWkb();
+    QByteArray wkbForCurve = curve->asWkb( flags );
     binarySize += wkbForCurve.length();
     wkbForCurves << wkbForCurve;
   }
@@ -253,7 +256,7 @@ QString QgsCompoundCurve::asWkt( int precision ) const
 {
   QString wkt = wktTypeStr();
   if ( isEmpty() )
-    wkt += QStringLiteral( " EMPTY" );
+    wkt += QLatin1String( " EMPTY" );
   else
   {
     wkt += QLatin1String( " (" );
@@ -728,6 +731,16 @@ QVector< QPair<int, QgsVertexId> > QgsCompoundCurve::curveVertexId( QgsVertexId 
         vid.vertex = 0;
         curveIds.append( qMakePair( i + 1, vid ) );
       }
+      break;
+    }
+    else if ( id.vertex >= currentVertexIndex && id.vertex == currentVertexIndex + increment + 1 && i == ( mCurves.size() - 1 ) )
+    {
+      int curveVertexId = id.vertex - currentVertexIndex;
+      QgsVertexId vid;
+      vid.part = 0;
+      vid.ring = 0;
+      vid.vertex = curveVertexId;
+      curveIds.append( qMakePair( i, vid ) );
       break;
     }
     currentVertexIndex += increment;

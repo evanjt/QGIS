@@ -41,6 +41,7 @@ class APP_EXPORT QgsDatumTransformTableModel : public QAbstractTableModel
       SourceCrsColumn  = 0,
       DestinationCrsColumn,
       ProjDefinitionColumn,
+      AllowFallbackColumn,
 #else
       SourceCrsColumn  = 0,
       SourceTransformColumn,
@@ -80,6 +81,7 @@ class APP_EXPORT QgsDatumTransformTableWidget : public QWidget, private Ui::QgsD
 
   public:
     explicit QgsDatumTransformTableWidget( QWidget *parent = nullptr );
+    ~QgsDatumTransformTableWidget() override;
 
     void setTransformContext( const QgsCoordinateTransformContext &context )
     {
@@ -99,7 +101,7 @@ class APP_EXPORT QgsDatumTransformTableWidget : public QWidget, private Ui::QgsD
     void removeDatumTransform();
 
     //! edit currently selected datum transform
-    void editDatumTransform();
+    void editDatumTransform( const QModelIndex &index );
 
   private slots:
 

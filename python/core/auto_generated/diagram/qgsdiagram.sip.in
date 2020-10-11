@@ -9,16 +9,29 @@
 
 
 
-class QgsDiagram
+class QgsDiagram /NoDefaultCtors/
 {
 %Docstring
-Base class for all diagram types*
+Base class for all diagram types.
 %End
 
 %TypeHeaderCode
 #include "qgsdiagram.h"
 %End
   public:
+
+%ConvertToSubClassCode
+    if ( sipCpp->diagramName() == QLatin1String( "Pie" ) )
+      sipType = sipType_QgsPieDiagram;
+    else if ( sipCpp->diagramName() == QLatin1String( "Histogram" ) )
+      sipType = sipType_QgsHistogramDiagram;
+    else if ( sipCpp->diagramName() == QLatin1String( "Text" ) )
+      sipType = sipType_QgsTextDiagram;
+    else if ( sipCpp->diagramName() == QLatin1String( "Stacked" ) )
+      sipType = sipType_QgsStackedBarDiagram;
+    else
+      sipType = NULL;
+%End
 
     virtual ~QgsDiagram();
 

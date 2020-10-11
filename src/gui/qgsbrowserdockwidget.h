@@ -23,7 +23,6 @@
 #include "qgsdataitem.h"
 #include "qgsbrowsertreeview.h"
 #include "qgsdockwidget.h"
-#include "qgsbrowserdockwidget_p.h"
 #include "qgis_gui.h"
 #include <QSortFilterProxyModel>
 
@@ -81,6 +80,20 @@ class GUI_EXPORT QgsBrowserDockWidget : public QgsDockWidget, private Ui::QgsBro
      */
     QgsMessageBar *messageBar();
 
+    /**
+     * Sets the customization for data items based on item's data provider key
+     *
+     * By default browser model shows all items from all available data items provider and few special
+     * items (e.g. Favorites). To customize the behavior, set the filter to not load certain data items.
+     * The items that are not based on data item providers (e.g. Favorites, Home) have
+     * prefix "special:"
+     *
+     * Used in the proxy browser model to hide items
+     *
+     * \since QGIS 3.12
+     */
+    void setDisabledDataItemsKeys( const QStringList &filter );
+
   public slots:
 
     /**
@@ -127,6 +140,8 @@ class GUI_EXPORT QgsBrowserDockWidget : public QgsDockWidget, private Ui::QgsBro
     void setCaseSensitive( bool caseSensitive );
     //! Apply filter to the model
     void setFilter();
+    //! Sets the selection to \a index and expand it
+    void setActiveIndex( const QModelIndex &index );
     //! Update project home directory
     void updateProjectHome();
 
@@ -191,9 +206,7 @@ class GUI_EXPORT QgsBrowserDockWidget : public QgsDockWidget, private Ui::QgsBro
     float mPropertiesWidgetHeight;
 
     QgsMessageBar *mMessageBar = nullptr;
-
+    QStringList mDisabledDataItemsKeys;
 };
-
-
 
 #endif // QGSBROWSERDOCKWIDGET_H

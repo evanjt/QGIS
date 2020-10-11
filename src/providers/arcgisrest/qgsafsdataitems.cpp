@@ -29,7 +29,7 @@
 
 
 QgsAfsRootItem::QgsAfsRootItem( QgsDataItem *parent, const QString &name, const QString &path )
-  : QgsDataCollectionItem( parent, name, path )
+  : QgsConnectionsRootItem( parent, name, path, QStringLiteral( "AFS" ) )
 {
   mCapabilities |= Fast;
   mIconName = QStringLiteral( "mIconAfs.svg" );
@@ -52,7 +52,7 @@ QVector<QgsDataItem *> QgsAfsRootItem::createChildren()
 #ifdef HAVE_GUI
 QWidget *QgsAfsRootItem::paramWidget()
 {
-  QgsAfsSourceSelect *select = new QgsAfsSourceSelect( nullptr, nullptr, QgsProviderRegistry::WidgetMode::Manager );
+  QgsAfsSourceSelect *select = new QgsAfsSourceSelect( nullptr, Qt::WindowFlags(), QgsProviderRegistry::WidgetMode::Manager );
   connect( select, &QgsArcGisServiceSourceSelect::connectionsChanged, this, &QgsAfsRootItem::onConnectionsChanged );
   return select;
 }
@@ -124,7 +124,7 @@ void addLayerItems( QVector< QgsDataItem * > &items, const QVariantMap &serviceD
 }
 
 QgsAfsConnectionItem::QgsAfsConnectionItem( QgsDataItem *parent, const QString &name, const QString &path, const QString &connectionName )
-  : QgsDataCollectionItem( parent, name, path )
+  : QgsDataCollectionItem( parent, name, path, QStringLiteral( "AFS" ) )
   , mConnName( connectionName )
 {
   mIconName = QStringLiteral( "mIconConnect.svg" );
@@ -135,7 +135,7 @@ QVector<QgsDataItem *> QgsAfsConnectionItem::createChildren()
 {
   const QgsOwsConnection connection( QStringLiteral( "ARCGISFEATURESERVER" ), mConnName );
   const QString url = connection.uri().param( QStringLiteral( "url" ) );
-  const QString authcfg = connection.uri().param( QStringLiteral( "authcfg" ) );
+  const QString authcfg = connection.uri().authConfigId();
   const QString referer = connection.uri().param( QStringLiteral( "referer" ) );
   QgsStringMap headers;
   if ( ! referer.isEmpty() )
@@ -177,7 +177,7 @@ QString QgsAfsConnectionItem::url() const
 
 
 QgsAfsFolderItem::QgsAfsFolderItem( QgsDataItem *parent, const QString &name, const QString &path, const QString &baseUrl, const QString &authcfg, const QgsStringMap &headers )
-  : QgsDataCollectionItem( parent, name, path )
+  : QgsDataCollectionItem( parent, name, path, QStringLiteral( "AFS" ) )
   , mBaseUrl( baseUrl )
   , mAuthCfg( authcfg )
   , mHeaders( headers )
@@ -220,7 +220,7 @@ bool QgsAfsFolderItem::equal( const QgsDataItem *other )
 }
 
 QgsAfsServiceItem::QgsAfsServiceItem( QgsDataItem *parent, const QString &name, const QString &path, const QString &baseUrl, const QString &authcfg, const QgsStringMap &headers )
-  : QgsDataCollectionItem( parent, name, path )
+  : QgsDataCollectionItem( parent, name, path, QStringLiteral( "AFS" ) )
   , mBaseUrl( baseUrl )
   , mAuthCfg( authcfg )
   , mHeaders( headers )
@@ -309,7 +309,7 @@ QgsDataItem *QgsAfsDataItemProvider::createDataItem( const QString &path, QgsDat
 {
   if ( path.isEmpty() )
   {
-    return new QgsAfsRootItem( parentItem, QStringLiteral( "ArcGisFeatureServer" ), QStringLiteral( "arcgisfeatureserver:" ) );
+    return new QgsAfsRootItem( parentItem, QObject::tr( "ArcGIS Feature Service" ), QStringLiteral( "arcgisfeatureserver:" ) );
   }
 
   // path schema: afs:/connection name (used by OWS)

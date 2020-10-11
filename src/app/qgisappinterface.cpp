@@ -162,14 +162,19 @@ QgsMeshLayer *QgisAppInterface::addMeshLayer( const QString &url, const QString 
   return qgis->addMeshLayer( url, baseName, providerKey );
 }
 
+QgsVectorTileLayer *QgisAppInterface::addVectorTileLayer( const QString &url, const QString &baseName )
+{
+  return qgis->addVectorTileLayer( url, baseName );
+}
+
 bool QgisAppInterface::addProject( const QString &projectName )
 {
   return qgis->addProject( projectName );
 }
 
-void QgisAppInterface::newProject( bool promptToSaveFlag )
+bool QgisAppInterface::newProject( bool promptToSaveFlag )
 {
-  qgis->fileNew( promptToSaveFlag );
+  return qgis->fileNew( promptToSaveFlag );
 }
 
 void QgisAppInterface::reloadConnections()
@@ -440,6 +445,11 @@ void QgisAppInterface::showOptionsDialog( QWidget *parent, const QString &curren
   return qgis->showOptionsDialog( parent, currentPage );
 }
 
+void QgisAppInterface::showProjectPropertiesDialog( const QString &currentPage )
+{
+  return qgis->showProjectProperties( currentPage );
+}
+
 QMap<QString, QVariant> QgisAppInterface::defaultStyleSheetOptions()
 {
   return qgis->styleSheetBuilder()->defaultOptions();
@@ -463,6 +473,11 @@ QFont QgisAppInterface::defaultStyleSheetFont()
 void QgisAppInterface::addDockWidget( Qt::DockWidgetArea area, QDockWidget *dockwidget )
 {
   qgis->addDockWidget( area, dockwidget );
+}
+
+void QgisAppInterface::addTabifiedDockWidget( Qt::DockWidgetArea area, QDockWidget *dockwidget, const QStringList &tabifyWith, bool raiseTab )
+{
+  qgis->addTabifiedDockWidget( area, dockwidget, tabifyWith, raiseTab );
 }
 
 void QgisAppInterface::removeDockWidget( QDockWidget *dockwidget )
@@ -536,6 +551,36 @@ void QgisAppInterface::unregisterOptionsWidgetFactory( QgsOptionsWidgetFactory *
   qgis->unregisterOptionsWidgetFactory( factory );
 }
 
+void QgisAppInterface::registerProjectPropertiesWidgetFactory( QgsOptionsWidgetFactory *factory )
+{
+  qgis->registerProjectPropertiesWidgetFactory( factory );
+}
+
+void QgisAppInterface::unregisterProjectPropertiesWidgetFactory( QgsOptionsWidgetFactory *factory )
+{
+  qgis->unregisterProjectPropertiesWidgetFactory( factory );
+}
+
+void QgisAppInterface::registerDevToolWidgetFactory( QgsDevToolWidgetFactory *factory )
+{
+  qgis->registerDevToolFactory( factory );
+}
+
+void QgisAppInterface::unregisterDevToolWidgetFactory( QgsDevToolWidgetFactory *factory )
+{
+  qgis->unregisterDevToolFactory( factory );
+}
+
+void QgisAppInterface::registerApplicationExitBlocker( QgsApplicationExitBlockerInterface *blocker )
+{
+  qgis->registerApplicationExitBlocker( blocker );
+}
+
+void QgisAppInterface::unregisterApplicationExitBlocker( QgsApplicationExitBlockerInterface *blocker )
+{
+  qgis->unregisterApplicationExitBlocker( blocker );
+}
+
 void QgisAppInterface::registerCustomDropHandler( QgsCustomDropHandler *handler )
 {
   qgis->registerCustomDropHandler( handler );
@@ -556,6 +601,16 @@ void QgisAppInterface::unregisterCustomDropHandler( QgsCustomDropHandler *handle
   qgis->unregisterCustomDropHandler( handler );
 }
 
+void QgisAppInterface::registerCustomProjectOpenHandler( QgsCustomProjectOpenHandler *handler )
+{
+  qgis->registerCustomProjectOpenHandler( handler );
+}
+
+void QgisAppInterface::unregisterCustomProjectOpenHandler( QgsCustomProjectOpenHandler *handler )
+{
+  qgis->unregisterCustomProjectOpenHandler( handler );
+}
+
 QMenu *QgisAppInterface::projectMenu() { return qgis->projectMenu(); }
 QMenu *QgisAppInterface::editMenu() { return qgis->editMenu(); }
 QMenu *QgisAppInterface::viewMenu() { return qgis->viewMenu(); }
@@ -564,6 +619,7 @@ QMenu *QgisAppInterface::newLayerMenu() { return qgis->newLayerMenu(); }
 QMenu *QgisAppInterface::addLayerMenu() { return qgis->addLayerMenu(); }
 QMenu *QgisAppInterface::settingsMenu() { return qgis->settingsMenu(); }
 QMenu *QgisAppInterface::pluginMenu() { return qgis->pluginMenu(); }
+QMenu *QgisAppInterface::pluginHelpMenu() { return qgis->pluginHelpMenu(); }
 QMenu *QgisAppInterface::rasterMenu() { return qgis->rasterMenu(); }
 QMenu *QgisAppInterface::vectorMenu() { return qgis->vectorMenu(); }
 QMenu *QgisAppInterface::databaseMenu() { return qgis->databaseMenu(); }
@@ -580,6 +636,7 @@ QToolBar *QgisAppInterface::digitizeToolBar() { return qgis->digitizeToolBar(); 
 QToolBar *QgisAppInterface::advancedDigitizeToolBar() { return qgis->advancedDigitizeToolBar(); }
 QToolBar *QgisAppInterface::shapeDigitizeToolBar() { return qgis->shapeDigitizeToolBar(); }
 QToolBar *QgisAppInterface::attributesToolBar() { return qgis->attributesToolBar(); }
+QToolBar *QgisAppInterface::selectionToolBar() { return qgis->selectionToolBar(); }
 QToolBar *QgisAppInterface::pluginToolBar() { return qgis->pluginToolBar(); }
 QToolBar *QgisAppInterface::helpToolBar() { return qgis->helpToolBar(); }
 QToolBar *QgisAppInterface::rasterToolBar() { return qgis->rasterToolBar(); }
@@ -636,13 +693,30 @@ QAction *QgisAppInterface::actionMapTips() { return qgis->actionMapTips(); }
 QAction *QgisAppInterface::actionNewBookmark() { return qgis->actionNewBookmark(); }
 QAction *QgisAppInterface::actionShowBookmarks() { return qgis->actionShowBookmarks(); }
 QAction *QgisAppInterface::actionDraw() { return qgis->actionDraw(); }
-
+QAction *QgisAppInterface::actionCircle2Points() {  return qgis->actionCircle2Points();}
+QAction *QgisAppInterface::actionCircle3Points() {  return qgis->actionCircle3Points();}
+QAction *QgisAppInterface::actionCircle3Tangents() {  return qgis->actionCircle3Tangents();}
+QAction *QgisAppInterface::actionCircle2TangentsPoint() {  return qgis->actionCircle2TangentsPoint();}
+QAction *QgisAppInterface::actionCircleCenterPoint() {  return qgis->actionCircleCenterPoint();}
+QAction *QgisAppInterface::actionEllipseCenter2Points() {  return qgis->actionEllipseCenter2Points();}
+QAction *QgisAppInterface::actionEllipseCenterPoint() {  return qgis->actionEllipseCenterPoint();}
+QAction *QgisAppInterface::actionEllipseExtent() {  return qgis->actionEllipseExtent();}
+QAction *QgisAppInterface::actionEllipseFoci() {  return qgis->actionEllipseFoci();}
+QAction *QgisAppInterface::actionRectangleCenterPoint() {  return qgis->actionRectangleCenterPoint();}
+QAction *QgisAppInterface::actionRectangleExtent() {  return qgis->actionRectangleExtent();}
+QAction *QgisAppInterface::actionRectangle3PointsDistance() {  return qgis->actionRectangle3PointsDistance();}
+QAction *QgisAppInterface::actionRectangle3PointsProjected() {  return qgis->actionRectangle3PointsProjected();}
+QAction *QgisAppInterface::actionRegularPolygon2Points() {  return qgis->actionRegularPolygon2Points();}
+QAction *QgisAppInterface::actionRegularPolygonCenterPoint() {  return qgis->actionRegularPolygonCenterPoint();}
+QAction *QgisAppInterface::actionRegularPolygonCenterCorner() {  return qgis->actionRegularPolygonCenterCorner();}
 //! Layer menu actions
 QAction *QgisAppInterface::actionNewVectorLayer() { return qgis->actionNewVectorLayer(); }
 QAction *QgisAppInterface::actionAddOgrLayer() { return qgis->actionAddOgrLayer(); }
 QAction *QgisAppInterface::actionAddRasterLayer() { return qgis->actionAddRasterLayer(); }
 QAction *QgisAppInterface::actionAddPgLayer() { return qgis->actionAddPgLayer(); }
 QAction *QgisAppInterface::actionAddWmsLayer() { return qgis->actionAddWmsLayer(); }
+QAction *QgisAppInterface::actionAddXyzLayer() { return qgis->actionAddXyzLayer(); }
+QAction *QgisAppInterface::actionAddVectorTileLayer() { return qgis->actionAddVectorTileLayer(); }
 QAction *QgisAppInterface::actionAddAfsLayer() { return qgis->actionAddAfsLayer(); }
 QAction *QgisAppInterface::actionAddAmsLayer() { return qgis->actionAddAmsLayer(); }
 QAction *QgisAppInterface::actionCopyLayerStyle() { return qgis->actionCopyLayerStyle(); }
@@ -668,6 +742,8 @@ QAction *QgisAppInterface::actionRemoveAllFromOverview() { return qgis->actionRe
 QAction *QgisAppInterface::actionHideAllLayers() { return qgis->actionHideAllLayers(); }
 QAction *QgisAppInterface::actionShowAllLayers() { return qgis->actionShowAllLayers(); }
 QAction *QgisAppInterface::actionHideSelectedLayers() { return qgis->actionHideSelectedLayers(); }
+QAction *QgisAppInterface::actionToggleSelectedLayers() { return qgis->actionToggleSelectedLayers(); }
+QAction *QgisAppInterface::actionToggleSelectedLayersIndependently() { return qgis->actionToggleSelectedLayersIndependently(); }
 QAction *QgisAppInterface::actionHideDeselectedLayers() { return qgis->actionHideDeselectedLayers(); }
 QAction *QgisAppInterface::actionShowSelectedLayers() { return qgis->actionShowSelectedLayers(); }
 
@@ -704,16 +780,10 @@ bool QgisAppInterface::openFeatureForm( QgsVectorLayer *vlayer, QgsFeature &f, b
 
 void QgisAppInterface::preloadForm( const QString &uifile )
 {
-  QSignalMapper *signalMapper = new QSignalMapper( this );
-  mTimer = new QTimer( this );
-
-  connect( mTimer, SIGNAL( timeout() ), signalMapper, SLOT( map() ) );
-  connect( signalMapper, SIGNAL( mapped( QString ) ), mTimer, SLOT( stop() ) );
-  connect( signalMapper, SIGNAL( mapped( QString ) ), this, SLOT( cacheloadForm( QString ) ) );
-
-  signalMapper->setMapping( mTimer, uifile );
-
-  mTimer->start( 0 );
+  QTimer::singleShot( 0, this, [ = ]
+  {
+    cacheloadForm( uifile );
+  } );
 }
 
 void QgisAppInterface::cacheloadForm( const QString &uifile )
@@ -739,10 +809,8 @@ QgsAttributeDialog *QgisAppInterface::getFeatureForm( QgsVectorLayer *l, QgsFeat
   myDa.setSourceCrs( l->crs(), QgsProject::instance()->transformContext() );
   myDa.setEllipsoid( QgsProject::instance()->ellipsoid() );
 
-  QgsAttributeEditorContext context;
+  QgsAttributeEditorContext context( QgisApp::instance()->createAttributeEditorContext() );
   context.setDistanceArea( myDa );
-  context.setVectorLayerTools( qgis->vectorLayerTools() );
-  context.setMapCanvas( qgis->mapCanvas() );
   QgsAttributeDialog *dialog = new QgsAttributeDialog( l, &feature, false, qgis, true, context );
   if ( !feature.isValid() )
   {
@@ -769,6 +837,12 @@ int QgisAppInterface::messageTimeout()
 QgsStatusBar *QgisAppInterface::statusBarIface()
 {
   return qgis->statusBarIface();
+}
+
+void QgisAppInterface::locatorSearch( const QString &searchText )
+{
+  qgis->mLocatorWidget->invalidateResults();
+  qgis->mLocatorWidget->search( searchText );
 }
 
 void QgisAppInterface::registerLocatorFilter( QgsLocatorFilter *filter )
@@ -799,4 +873,14 @@ void QgisAppInterface::takeAppScreenShots( const QString &saveDirectory, const i
 QgsBrowserGuiModel *QgisAppInterface::browserModel()
 {
   return qgis->mBrowserModel;
+}
+
+QgsLayerTreeRegistryBridge::InsertionPoint QgisAppInterface::layerTreeInsertionPoint()
+{
+  return qgis->layerTreeInsertionPoint();
+}
+
+void QgisAppInterface::setGpsPanelConnection( QgsGpsConnection *connection )
+{
+  qgis->setGpsPanelConnection( connection );
 }

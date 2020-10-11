@@ -31,21 +31,27 @@ QgsTriangle::QgsTriangle( const QgsPoint &p1, const QgsPoint &p2, const QgsPoint
 {
   mWkbType = QgsWkbTypes::Triangle;
 
-  std::unique_ptr<QgsLineString> ext( new QgsLineString() );
-
-  ext->setPoints( QgsPointSequence() << p1 << p2 << p3 );
-
-  setExteriorRing( ext.release() );
+  QVector< double > x { p1.x(), p2.x(), p3.x(), p1.x() };
+  QVector< double > y { p1.y(), p2.y(), p3.y(), p1.y() };
+  QVector< double > z;
+  if ( p1.is3D() )
+  {
+    z = { p1.z(), p2.z(), p3.z(), p1.z() };
+  }
+  QVector< double > m;
+  if ( p1.isMeasure() )
+  {
+    m = {p1.m(), p2.m(), p3.m(), p1.m() };
+  }
+  setExteriorRing( new QgsLineString( x, y, z, m ) );
 }
 
 QgsTriangle::QgsTriangle( const QgsPointXY &p1, const QgsPointXY &p2, const QgsPointXY &p3 )
 {
   mWkbType = QgsWkbTypes::Triangle;
 
-  QVector< double > x;
-  x << p1.x() << p2.x() << p3.x();
-  QVector< double > y;
-  y << p1.y() << p2.y() << p3.y();
+  QVector< double > x { p1.x(), p2.x(), p3.x(), p1.x() };
+  QVector< double > y {p1.y(), p2.y(), p3.y(), p1.y() };
   QgsLineString *ext = new QgsLineString( x, y );
   setExteriorRing( ext );
 }
@@ -54,10 +60,8 @@ QgsTriangle::QgsTriangle( const QPointF p1, const QPointF p2, const QPointF p3 )
 {
   mWkbType = QgsWkbTypes::Triangle;
 
-  QVector< double > x;
-  x << p1.x() << p2.x() << p3.x();
-  QVector< double > y;
-  y << p1.y() << p2.y() << p3.y();
+  QVector< double > x{ p1.x(), p2.x(), p3.x(), p1.x() };
+  QVector< double > y{ p1.y(), p2.y(), p3.y(), p1.y() };
   QgsLineString *ext = new QgsLineString( x, y );
   setExteriorRing( ext );
 }
@@ -155,7 +159,6 @@ bool QgsTriangle::fromWkb( QgsConstWkbPtr &wkbPtr )
 
 bool QgsTriangle::fromWkt( const QString &wkt )
 {
-
   clear();
 
   QPair<QgsWkbTypes::Type, QString> parts = QgsGeometryUtils::wktReadBlock( wkt );
@@ -165,7 +168,10 @@ bool QgsTriangle::fromWkt( const QString &wkt )
 
   mWkbType = parts.first;
 
-  if ( parts.second.compare( QLatin1String( "EMPTY" ), Qt::CaseInsensitive ) == 0 )
+  QString secondWithoutParentheses = parts.second;
+  secondWithoutParentheses = secondWithoutParentheses.simplified().remove( ' ' );
+  if ( ( parts.second.compare( QLatin1String( "EMPTY" ), Qt::CaseInsensitive ) == 0 ) ||
+       secondWithoutParentheses.isEmpty() )
     return true;
 
   QString defaultChildWkbType = QStringLiteral( "LineString%1%2" ).arg( is3D() ? QStringLiteral( "Z" ) : QString(), isMeasure() ? QStringLiteral( "M" ) : QString() );
@@ -196,6 +202,11 @@ bool QgsTriangle::fromWkt( const QString &wkt )
     return false;
   }
   mExteriorRing.reset( mInteriorRings.takeFirst() );
+  if ( ( mExteriorRing->numPoints() < 3 ) || ( mExteriorRing->numPoints() > 4 ) || ( mExteriorRing->numPoints() == 4 && mExteriorRing->startPoint() != mExteriorRing->endPoint() ) )
+  {
+    clear();
+    return false;
+  }
 
   //scan through rings and check if dimensionality of rings is different to CurvePolygon.
   //if so, update the type dimensionality of the CurvePolygon to match
@@ -443,7 +454,7 @@ bool QgsTriangle::isRight( double angleTolerance ) const
   {
     if ( qgsDoubleNear( *ita, M_PI_2, angleTolerance ) )
       return true;
-    ita++;
+    ++ita;
   }
   return false;
 }

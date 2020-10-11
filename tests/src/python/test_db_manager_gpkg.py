@@ -24,6 +24,8 @@ from qgis.testing import start_app, unittest
 from plugins.db_manager.db_plugins import supportedDbTypes, createDbPlugin
 from plugins.db_manager.db_plugins.plugin import TableField
 
+from utilities import unitTestDataPath
+
 
 def GDAL_COMPUTE_VERSION(maj, min, rev):
     return ((maj) * 1000000 + (min) * 10000 + (rev) * 100)
@@ -137,7 +139,8 @@ class TestPyQgsDBManagerGpkg(unittest.TestCase):
 
         connection.remove()
 
-    @unittest.skipIf(os.environ.get('TRAVIS', '') == 'true', 'Test flaky') # see https://travis-ci.org/qgis/QGIS/jobs/502556996
+    @unittest.skipIf(os.environ.get('TRAVIS', '') == 'true',
+                     'Test flaky')  # see https://travis-ci.org/qgis/QGIS/jobs/502556996
     def testCreateRenameDeleteTable(self):
         connection_name = 'testCreateRenameDeleteTable'
         plugin = createDbPlugin('gpkg')
@@ -297,7 +300,8 @@ class TestPyQgsDBManagerGpkg(unittest.TestCase):
         sr.ImportFromEPSG(4326)
         mem_ds.SetProjection(sr.ExportToWkt())
         mem_ds.GetRasterBand(1).Fill(255)
-        gdal.GetDriverByName('GPKG').CreateCopy(test_gpkg_new, mem_ds, options=['APPEND_SUBDATASET=YES', 'RASTER_TABLE=raster_table'])
+        gdal.GetDriverByName('GPKG').CreateCopy(test_gpkg_new, mem_ds,
+                                                options=['APPEND_SUBDATASET=YES', 'RASTER_TABLE=raster_table'])
         mem_ds = None
 
         uri.setDatabase(test_gpkg_new)
@@ -342,7 +346,9 @@ class TestPyQgsDBManagerGpkg(unittest.TestCase):
         mem_ds.SetProjection(sr.ExportToWkt())
         mem_ds.GetRasterBand(1).Fill(255)
         for i in range(2):
-            gdal.GetDriverByName('GPKG').CreateCopy(test_gpkg_new, mem_ds, options=['APPEND_SUBDATASET=YES', 'RASTER_TABLE=raster_table%d' % (i + 1)])
+            gdal.GetDriverByName('GPKG').CreateCopy(test_gpkg_new, mem_ds, options=['APPEND_SUBDATASET=YES',
+                                                                                    'RASTER_TABLE=raster_table%d' % (
+                                                                                        i + 1)])
         mem_ds = None
 
         uri.setDatabase(test_gpkg_new)
@@ -442,6 +448,24 @@ class TestPyQgsDBManagerGpkg(unittest.TestCase):
         #     table = tables[i]
         #     info = table.info()
 
+        connection.remove()
+
+    def testAmphibiousMode(self, ):
+        connectionName = 'geopack1'
+        plugin = createDbPlugin('gpkg')
+        uri = QgsDataSourceUri()
+        test_gpkg = os.path.join(os.path.join(unitTestDataPath(), 'provider'), 'test_json.gpkg')
+
+        uri.setDatabase(test_gpkg)
+        plugin.addConnection(connectionName, uri)
+        connection = createDbPlugin('gpkg', connectionName)
+        connection.connect()
+        db = connection.database()
+        res = db.connector._execute(None, "SELECT St_area({}) from foo".format(db.tables()[0].fields()[1].name))
+        results = [row for row in res]
+        self.assertEqual(results,
+                         [(215229.265625,), (247328.171875,), (261752.78125,), (547597.2109375,), (15775.7578125,),
+                          (101429.9765625,), (268597.625,), (1634833.390625,), (596610.3359375,), (5268.8125,)])
         connection.remove()
 
 

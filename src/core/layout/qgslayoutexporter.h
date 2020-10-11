@@ -208,7 +208,14 @@ class CORE_EXPORT QgsLayoutExporter
       /**
        * Layout context flags, which control how the export will be created.
        */
-      QgsLayoutRenderContext::Flags flags = nullptr;
+      QgsLayoutRenderContext::Flags flags = QgsLayoutRenderContext::Flags();
+
+      /**
+       * A list of predefined scales to use with the layout. This is used
+       * for maps which are set to the predefined atlas scaling mode.
+       * \since QGIS 3.10
+       */
+      QVector<qreal> predefinedMapScales;
 
     };
 
@@ -285,7 +292,7 @@ class CORE_EXPORT QgsLayoutExporter
       /**
        * Layout context flags, which control how the export will be created.
        */
-      QgsLayoutRenderContext::Flags flags = nullptr;
+      QgsLayoutRenderContext::Flags flags = QgsLayoutRenderContext::Flags();
 
       /**
        * Text rendering format, which controls how text should be rendered in the export (e.g.
@@ -315,6 +322,21 @@ class CORE_EXPORT QgsLayoutExporter
        * \since QGIS 3.10
        */
       bool writeGeoPdf = false;
+
+      /**
+       * TRUE if individual layers from the layout should be rendered to separate PDF files.
+       *
+       * This option allows for separation of logic layout layers to individual PDF files. For instance,
+       * if this option is TRUE, then a separate PDF file will be created per layer per map item in the
+       * layout. Additionally, separate PDF files may be created for other complex layout items, resulting
+       * in a set of PDF files which contain logical atomic components of the layout.
+       *
+       * This option is designed to allow the PDF files to be composited back together in an external
+       * application (e.g. Adobe Illustrator) as a non-QGIS, post-production step.
+       *
+       * \since QGIS 3.14
+       */
+      bool exportLayersAsSeperateFiles = false; // TODO QGIS 4 fix typo  //#spellok
 
       /**
        * TRUE if ISO3200 extension format georeferencing should be used.
@@ -353,6 +375,13 @@ class CORE_EXPORT QgsLayoutExporter
        * If PdfExportSettings::writeGeoPdf is FALSE than this option has no effect.
        */
       QStringList exportThemes;
+
+      /**
+       * A list of predefined scales to use with the layout. This is used
+       * for maps which are set to the predefined atlas scaling mode.
+       * \since QGIS 3.10
+       */
+      QVector<qreal> predefinedMapScales;
 
     };
 
@@ -417,7 +446,14 @@ class CORE_EXPORT QgsLayoutExporter
       /**
        * Layout context flags, which control how the export will be created.
        */
-      QgsLayoutRenderContext::Flags flags = nullptr;
+      QgsLayoutRenderContext::Flags flags = QgsLayoutRenderContext::Flags();
+
+      /**
+       * A list of predefined scales to use with the layout. This is used
+       * for maps which are set to the predefined atlas scaling mode.
+       * \since QGIS 3.10
+       */
+      QVector<qreal> predefinedMapScales;
 
     };
 
@@ -501,7 +537,7 @@ class CORE_EXPORT QgsLayoutExporter
       /**
        * Layout context flags, which control how the export will be created.
        */
-      QgsLayoutRenderContext::Flags flags = nullptr;
+      QgsLayoutRenderContext::Flags flags = QgsLayoutRenderContext::Flags();
 
       /**
        * Text rendering format, which controls how text should be rendered in the export (e.g.
@@ -519,6 +555,12 @@ class CORE_EXPORT QgsLayoutExporter
        */
       bool simplifyGeometries = true;
 
+      /**
+       * A list of predefined scales to use with the layout. This is used
+       * for maps which are set to the predefined atlas scaling mode.
+       * \since QGIS 3.10
+       */
+      QVector<qreal> predefinedMapScales;
     };
 
     /**

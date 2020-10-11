@@ -53,6 +53,7 @@
 #include "qgsvectordataprovider.h"
 #include "qgsxmlutils.h"
 #include "qgsstringutils.h"
+#include "qgsmaplayertemporalproperties.h"
 
 QString QgsMapLayer::extensionPropertyType( QgsMapLayer::PropertyType type )
 {
@@ -120,6 +121,7 @@ void QgsMapLayer::clone( QgsMapLayer *layer ) const
   layer->setLegendUrl( legendUrl() );
   layer->setLegendUrlFormat( legendUrlFormat() );
   layer->setDependencies( dependencies() );
+  layer->mShouldValidateCrs = mShouldValidateCrs;
   layer->setCrs( crs() );
   layer->setCustomProperties( mCustomProperties );
 }
@@ -255,7 +257,7 @@ bool QgsMapLayer::readLayerXml( const QDomElement &layerElement, QgsReadWriteCon
   QDomNode srsNode = layerElement.namedItem( QStringLiteral( "srs" ) );
   mCRS.readXml( srsNode );
   mCRS.setValidationHint( tr( "Specify CRS for layer %1" ).arg( mne.text() ) );
-  if ( isSpatial() )
+  if ( isSpatial() && type() != QgsMapLayerType::AnnotationLayer )
     mCRS.validate();
   savedCRS = mCRS;
 
@@ -265,15 +267,6 @@ bool QgsMapLayer::readLayerXml( const QDomElement &layerElement, QgsReadWriteCon
   QgsCoordinateReferenceSystem::setCustomCrsValidation( nullptr );
 
   QgsReadWriteContextCategoryPopper p = context.enterCategory( tr( "Layer" ), mne.text() );
-
-  // now let the children grab what they need from the Dom node.
-  layerError = !readXml( layerElement, context );
-
-  // overwrite CRS with what we read from project file before the raster/vector
-  // file reading functions changed it. They will if projections is specified in the file.
-  // FIXME: is this necessary?
-  QgsCoordinateReferenceSystem::setCustomCrsValidation( savedValidation );
-  mCRS = savedCRS;
 
   // the internal name is just the data source basename
   //QFileInfo dataSourceFileInfo( mDataSource );
@@ -295,13 +288,21 @@ bool QgsMapLayer::readLayerXml( const QDomElement &layerElement, QgsReadWriteCon
   setRefreshOnNofifyMessage( layerElement.attribute( QStringLiteral( "refreshOnNotifyMessage" ), QString() ) );
   setRefreshOnNotifyEnabled( layerElement.attribute( QStringLiteral( "refreshOnNotifyEnabled" ), QStringLiteral( "0" ) ).toInt() );
 
-
   // set name
   mnl = layerElement.namedItem( QStringLiteral( "layername" ) );
   mne = mnl.toElement();
 
   //name can be translated
   setName( context.projectTranslator()->translate( QStringLiteral( "project:layers:%1" ).arg( layerElement.namedItem( QStringLiteral( "id" ) ).toElement().text() ), mne.text() ) );
+
+  // now let the children grab what they need from the Dom node.
+  layerError = !readXml( layerElement, context );
+
+  // overwrite CRS with what we read from project file before the raster/vector
+  // file reading functions changed it. They will if projections is specified in the file.
+  // FIXME: is this necessary? Yes, it is (autumn 2019)
+  QgsCoordinateReferenceSystem::setCustomCrsValidation( savedValidation );
+  mCRS = savedCRS;
 
   //short name
   QDomElement shortNameElem = layerElement.firstChildElement( QStringLiteral( "shortname" ) );
@@ -333,7 +334,7 @@ bool QgsMapLayer::readLayerXml( const QDomElement &layerElement, QgsReadWriteCon
     {
       kwdList << n.toElement().text();
     }
-    mKeywordList = kwdList.join( QStringLiteral( ", " ) );
+    mKeywordList = kwdList.join( QLatin1String( ", " ) );
   }
 
   //metadataUrl
@@ -579,6 +580,13 @@ void QgsMapLayer::writeCommonStyle( QDomElement &layerElement, QDomDocument &doc
     layerElement.appendChild( layerFlagsElem );
   }
 
+  if ( categories.testFlag( Temporal ) )
+  {
+    QgsMapLayerTemporalProperties *lTemporalProperties = const_cast< QgsMapLayer * >( this )->temporalProperties();
+    if ( lTemporalProperties )
+      lTemporalProperties->writeXml( layerElement, document, context );
+  }
+
   // custom properties
   if ( categories.testFlag( CustomProperties ) )
   {
@@ -612,6 +620,7 @@ QString QgsMapLayer::decodedSource( const QString &source, const QString &dataPr
 
 void QgsMapLayer::resolveReferences( QgsProject *project )
 {
+  emit beforeResolveReferences( project );
   if ( m3DRenderer )
     m3DRenderer->resolveReferences( *project );
 }
@@ -763,7 +772,7 @@ void QgsMapLayer::setCrs( const QgsCoordinateReferenceSystem &srs, bool emitSign
 {
   mCRS = srs;
 
-  if ( isSpatial() && !mCRS.isValid() )
+  if ( mShouldValidateCrs && isSpatial() && !mCRS.isValid() && type() != QgsMapLayerType::AnnotationLayer )
   {
     mCRS.setValidationHint( tr( "Specify CRS for layer %1" ).arg( name() ) );
     mCRS.validate();
@@ -775,7 +784,8 @@ void QgsMapLayer::setCrs( const QgsCoordinateReferenceSystem &srs, bool emitSign
 
 QgsCoordinateTransformContext QgsMapLayer::transformContext() const
 {
-  return dataProvider() ? dataProvider()->transformContext() : QgsCoordinateTransformContext();
+  const QgsDataProvider *lDataProvider = dataProvider();
+  return lDataProvider ? lDataProvider->transformContext() : QgsCoordinateTransformContext();
 }
 
 QString QgsMapLayer::formatLayerName( const QString &name )
@@ -1035,7 +1045,7 @@ bool QgsMapLayer::importNamedStyle( QDomDocument &myDocument, QString &myErrorMe
 
   // get style file version string, if any
   QgsProjectVersion fileVersion( myRoot.attribute( QStringLiteral( "version" ) ) );
-  QgsProjectVersion thisVersion( Qgis::QGIS_VERSION );
+  QgsProjectVersion thisVersion( Qgis::version() );
 
   if ( thisVersion > fileVersion )
   {
@@ -1054,7 +1064,7 @@ bool QgsMapLayer::importNamedStyle( QDomDocument &myDocument, QString &myErrorMe
     {
       QgsVectorLayer *vl = qobject_cast<QgsVectorLayer *>( this );
       QgsWkbTypes::GeometryType importLayerGeometryType = static_cast<QgsWkbTypes::GeometryType>( myRoot.firstChildElement( QStringLiteral( "layerGeometryType" ) ).text().toInt() );
-      if ( vl->geometryType() != importLayerGeometryType )
+      if ( importLayerGeometryType != QgsWkbTypes::GeometryType::UnknownGeometry && vl->geometryType() != importLayerGeometryType )
       {
         myErrorMessage = tr( "Cannot apply style with symbology to layer with a different geometry type" );
         return false;
@@ -1073,7 +1083,7 @@ void QgsMapLayer::exportNamedMetadata( QDomDocument &doc, QString &errorMsg ) co
   QDomDocument myDocument( documentType );
 
   QDomElement myRootNode = myDocument.createElement( QStringLiteral( "qgis" ) );
-  myRootNode.setAttribute( QStringLiteral( "version" ), Qgis::QGIS_VERSION );
+  myRootNode.setAttribute( QStringLiteral( "version" ), Qgis::version() );
   myDocument.appendChild( myRootNode );
 
   if ( !mMetadata.writeMetadataXml( myRootNode, myDocument ) )
@@ -1092,7 +1102,7 @@ void QgsMapLayer::exportNamedStyle( QDomDocument &doc, QString &errorMsg, const 
   QDomDocument myDocument( documentType );
 
   QDomElement myRootNode = myDocument.createElement( QStringLiteral( "qgis" ) );
-  myRootNode.setAttribute( QStringLiteral( "version" ), Qgis::QGIS_VERSION );
+  myRootNode.setAttribute( QStringLiteral( "version" ), Qgis::version() );
   myDocument.appendChild( myRootNode );
 
   if ( !writeSymbology( myRootNode, myDocument, errorMsg, context, categories ) )  // TODO: support relative paths in QML?
@@ -1671,6 +1681,13 @@ void QgsMapLayer::readCommonStyle( const QDomElement &layerElement, const QgsRea
     }
     setFlags( flags );
   }
+
+  if ( categories.testFlag( Temporal ) )
+  {
+    QgsMapLayerTemporalProperties *lTemporalProperties = temporalProperties();
+    if ( lTemporalProperties )
+      lTemporalProperties->readXml( layerElement.toElement(), context );
+  }
 }
 
 QUndoStack *QgsMapLayer::undoStack()
@@ -1696,6 +1713,11 @@ void QgsMapLayer::setCustomProperty( const QString &key, const QVariant &value )
 void QgsMapLayer::setCustomProperties( const QgsObjectCustomProperties &properties )
 {
   mCustomProperties = properties;
+}
+
+const QgsObjectCustomProperties &QgsMapLayer::customProperties() const
+{
+  return mCustomProperties;
 }
 
 QVariant QgsMapLayer::customProperty( const QString &value, const QVariant &defaultValue ) const
@@ -1725,9 +1747,38 @@ bool QgsMapLayer::isSpatial() const
   return true;
 }
 
+bool QgsMapLayer::isTemporary() const
+{
+  // invalid layers are temporary? -- who knows?!
+  if ( !isValid() )
+    return false;
+
+  if ( mProviderKey == QLatin1String( "memory" ) )
+    return true;
+
+  const QVariantMap sourceParts = QgsProviderRegistry::instance()->decodeUri( mProviderKey, mDataSource );
+  const QString path = sourceParts.value( QStringLiteral( "path" ) ).toString();
+  if ( path.isEmpty() )
+    return false;
+
+  // check if layer path is inside one of the standard temporary file locations for this platform
+  const QStringList tempPaths = QStandardPaths::standardLocations( QStandardPaths::TempLocation );
+  for ( const QString &tempPath : tempPaths )
+  {
+    if ( path.startsWith( tempPath ) )
+      return true;
+  }
+
+  return false;
+}
+
 void QgsMapLayer::setValid( bool valid )
 {
+  if ( mValid == valid )
+    return;
+
   mValid = valid;
+  emit isValidChanged();
 }
 
 void QgsMapLayer::setLegend( QgsMapLayerLegend *legend )
@@ -1872,18 +1923,19 @@ bool QgsMapLayer::setDependencies( const QSet<QgsMapLayerDependency> &oDeps )
 
 void QgsMapLayer::setRefreshOnNotifyEnabled( bool enabled )
 {
-  if ( !dataProvider() )
+  QgsDataProvider *lDataProvider = dataProvider();
+  if ( !lDataProvider )
     return;
 
   if ( enabled && !isRefreshOnNotifyEnabled() )
   {
-    dataProvider()->setListening( enabled );
-    connect( dataProvider(), &QgsVectorDataProvider::notify, this, &QgsMapLayer::onNotifiedTriggerRepaint );
+    lDataProvider->setListening( enabled );
+    connect( lDataProvider, &QgsVectorDataProvider::notify, this, &QgsMapLayer::onNotifiedTriggerRepaint );
   }
   else if ( !enabled && isRefreshOnNotifyEnabled() )
   {
     // we don't want to disable provider listening because someone else could need it (e.g. actions)
-    disconnect( dataProvider(), &QgsVectorDataProvider::notify, this, &QgsMapLayer::onNotifiedTriggerRepaint );
+    disconnect( lDataProvider, &QgsVectorDataProvider::notify, this, &QgsMapLayer::onNotifiedTriggerRepaint );
   }
   mIsRefreshOnNofifyEnabled = enabled;
 }

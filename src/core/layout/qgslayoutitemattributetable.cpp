@@ -30,45 +30,7 @@
 #include "qgsmapsettings.h"
 #include "qgsexpressioncontextutils.h"
 #include "qgsgeometryengine.h"
-
-//QgsLayoutAttributeTableCompare
-
-///@cond PRIVATE
-
-/**
- * Helper class for sorting tables, takes into account sorting column and ascending / descending
-*/
-class CORE_EXPORT QgsLayoutAttributeTableCompare
-{
-  public:
-
-    /**
-     * Constructor for QgsLayoutAttributeTableCompare.
-     */
-    QgsLayoutAttributeTableCompare() = default;
-    bool operator()( const QgsLayoutTableRow &m1, const QgsLayoutTableRow &m2 )
-    {
-      return ( mAscending ? qgsVariantLessThan( m1[mCurrentSortColumn], m2[mCurrentSortColumn] )
-               : qgsVariantGreaterThan( m1[mCurrentSortColumn], m2[mCurrentSortColumn] ) );
-    }
-
-    /**
-     * Sets \a column number to sort by.
-     */
-    void setSortColumn( int column ) { mCurrentSortColumn = column; }
-
-    /**
-     * Sets sort order for column sorting
-     * Set \a ascending to true to sort in ascending order, false to sort in descending order
-     */
-    void setAscending( bool ascending ) { mAscending = ascending; }
-
-  private:
-    int mCurrentSortColumn = 0;
-    bool mAscending = true;
-};
-
-///@endcond
+#include "qgsconditionalstyle.h"
 
 //
 // QgsLayoutItemAttributeTable
@@ -208,8 +170,8 @@ void QgsLayoutItemAttributeTable::resetColumns()
   }
 
   //remove existing columns
-  qDeleteAll( mColumns );
   mColumns.clear();
+  mSortColumns.clear();
 
   //rebuild columns list from vector layer fields
   int idx = 0;
@@ -217,10 +179,10 @@ void QgsLayoutItemAttributeTable::resetColumns()
   for ( const auto &field : sourceFields )
   {
     QString currentAlias = source->attributeDisplayName( idx );
-    std::unique_ptr< QgsLayoutTableColumn > col = qgis::make_unique< QgsLayoutTableColumn >();
-    col->setAttribute( field.name() );
-    col->setHeading( currentAlias );
-    mColumns.append( col.release() );
+    QgsLayoutTableColumn col;
+    col.setAttribute( field.name() );
+    col.setHeading( currentAlias );
+    mColumns.append( col );
     idx++;
   }
 }
@@ -236,6 +198,23 @@ void QgsLayoutItemAttributeTable::disconnectCurrentMap()
   disconnect( mMap, &QgsLayoutItemMap::mapRotationChanged, this, &QgsLayoutTable::refreshAttributes );
   disconnect( mMap, &QObject::destroyed, this, &QgsLayoutItemAttributeTable::disconnectCurrentMap );
   mMap = nullptr;
+}
+
+bool QgsLayoutItemAttributeTable::useConditionalStyling() const
+{
+  return mUseConditionalStyling;
+}
+
+void QgsLayoutItemAttributeTable::setUseConditionalStyling( bool useConditionalStyling )
+{
+  if ( useConditionalStyling == mUseConditionalStyling )
+  {
+    return;
+  }
+
+  mUseConditionalStyling = useConditionalStyling;
+  refreshAttributes();
+  emit changed();
 }
 
 void QgsLayoutItemAttributeTable::setMap( QgsLayoutItemMap *map )
@@ -340,7 +319,6 @@ void QgsLayoutItemAttributeTable::setDisplayedFields( const QStringList &fields,
   }
 
   //rebuild columns list, taking only fields contained in supplied list
-  qDeleteAll( mColumns );
   mColumns.clear();
 
   const QgsFields layerFields = source->fields();
@@ -354,10 +332,10 @@ void QgsLayoutItemAttributeTable::setDisplayedFields( const QStringList &fields,
         continue;
 
       QString currentAlias = source->attributeDisplayName( attrIdx );
-      std::unique_ptr< QgsLayoutTableColumn > col = qgis::make_unique< QgsLayoutTableColumn >();
-      col->setAttribute( layerFields.at( attrIdx ).name() );
-      col->setHeading( currentAlias );
-      mColumns.append( col.release() );
+      QgsLayoutTableColumn col;
+      col.setAttribute( layerFields.at( attrIdx ).name() );
+      col.setHeading( currentAlias );
+      mColumns.append( col );
     }
   }
   else
@@ -367,10 +345,10 @@ void QgsLayoutItemAttributeTable::setDisplayedFields( const QStringList &fields,
     for ( const QgsField &field : layerFields )
     {
       QString currentAlias = source->attributeDisplayName( idx );
-      std::unique_ptr< QgsLayoutTableColumn > col = qgis::make_unique< QgsLayoutTableColumn >();
-      col->setAttribute( field.name() );
-      col->setHeading( currentAlias );
-      mColumns.append( col.release() );
+      QgsLayoutTableColumn col;
+      col.setAttribute( field.name() );
+      col.setHeading( currentAlias );
+      mColumns.append( col );
       idx++;
     }
   }
@@ -389,16 +367,16 @@ void QgsLayoutItemAttributeTable::restoreFieldAliasMap( const QMap<int, QString>
     return;
   }
 
-  for ( QgsLayoutTableColumn *column : qgis::as_const( mColumns ) )
+  for ( int i = 0; i < mColumns.count(); i++ )
   {
-    int attrIdx = source->fields().lookupField( column->attribute() );
+    int attrIdx = source->fields().lookupField( mColumns[i].attribute() );
     if ( map.contains( attrIdx ) )
     {
-      column->setHeading( map.value( attrIdx ) );
+      mColumns[i].setHeading( map.value( attrIdx ) );
     }
     else
     {
-      column->setHeading( source->attributeDisplayName( attrIdx ) );
+      mColumns[i].setHeading( source->attributeDisplayName( attrIdx ) );
     }
   }
 }
@@ -414,10 +392,13 @@ bool QgsLayoutItemAttributeTable::getTableContents( QgsLayoutTableContents &cont
     return false;
   }
 
+  const QgsConditionalLayerStyles *conditionalStyles = layer->conditionalStyles();
+
   QgsExpressionContext context = createExpressionContext();
   context.setFields( layer->fields() );
 
   QgsFeatureRequest req;
+  req.setExpressionContext( context );
 
   //prepare filter expression
   std::unique_ptr<QgsExpression> filterExpression;
@@ -429,7 +410,6 @@ bool QgsLayoutItemAttributeTable::getTableContents( QgsLayoutTableContents &cont
     {
       activeFilter = true;
       req.setFilterExpression( mFeatureFilter );
-      req.setExpressionContext( context );
     }
   }
 
@@ -440,20 +420,17 @@ bool QgsLayoutItemAttributeTable::getTableContents( QgsLayoutTableContents &cont
   {
     visibleRegion = QgsGeometry::fromQPolygonF( mMap->visibleExtentPolygon() );
     selectionRect = visibleRegion.boundingBox();
-    if ( layer )
+    //transform back to layer CRS
+    QgsCoordinateTransform coordTransform( layer->crs(), mMap->crs(), mLayout->project() );
+    try
     {
-      //transform back to layer CRS
-      QgsCoordinateTransform coordTransform( layer->crs(), mMap->crs(), mLayout->project() );
-      try
-      {
-        selectionRect = coordTransform.transformBoundingBox( selectionRect, QgsCoordinateTransform::ReverseTransform );
-        visibleRegion.transform( coordTransform, QgsCoordinateTransform::ReverseTransform );
-      }
-      catch ( QgsCsException &cse )
-      {
-        Q_UNUSED( cse )
-        return false;
-      }
+      selectionRect = coordTransform.transformBoundingBox( selectionRect, QgsCoordinateTransform::ReverseTransform );
+      visibleRegion.transform( coordTransform, QgsCoordinateTransform::ReverseTransform );
+    }
+    catch ( QgsCsException &cse )
+    {
+      Q_UNUSED( cse )
+      return false;
     }
     visibleMapEngine.reset( QgsGeometry::createGeometryEngine( visibleRegion.constGet() ) );
     visibleMapEngine->prepareGeometry();
@@ -499,9 +476,20 @@ bool QgsLayoutItemAttributeTable::getTableContents( QgsLayoutTableContents &cont
     req.setFilterFid( atlasFeature.id() );
   }
 
+  for ( const QgsLayoutTableColumn &column : qgis::as_const( mSortColumns ) )
+  {
+    req.addOrderBy( column.attribute(), column.sortOrder() == Qt::AscendingOrder );
+  }
+
   QgsFeature f;
   int counter = 0;
   QgsFeatureIterator fit = layer->getFeatures( req );
+
+  mConditionalStyles.clear();
+  mFeatures.clear();
+
+  QVector< QVector< Cell > > tempContents;
+  QgsLayoutTableContents existingContents;
 
   while ( fit.nextFeature( f ) && counter < mMaximumNumberOfFeatures )
   {
@@ -539,46 +527,110 @@ bool QgsLayoutItemAttributeTable::getTableContents( QgsLayoutTableContents &cont
         continue;
     }
 
-    QgsLayoutTableRow currentRow;
-    currentRow.reserve( mColumns.count() );
+    QgsConditionalStyle rowStyle;
 
-    for ( QgsLayoutTableColumn *column : qgis::as_const( mColumns ) )
+    if ( mUseConditionalStyling )
     {
-      int idx = layer->fields().lookupField( column->attribute() );
+      const QList<QgsConditionalStyle> styles = QgsConditionalStyle::matchingConditionalStyles( conditionalStyles->rowStyles(), QVariant(),  context );
+      rowStyle = QgsConditionalStyle::compressStyles( styles );
+    }
+
+    // We need to build up two different lists here -- one is a pair of the cell contents along with the cell style.
+    // We need this one because we do a sorting step later, and we need to ensure that the cell styling is attached to the right row and sorted
+    // correctly when this occurs
+    // We also need a list of just the cell contents, so that we can do a quick check for row uniqueness (when the
+    // corresponding option is enabled)
+    QVector< Cell > currentRow;
+    currentRow.reserve( mColumns.count() );
+    QgsLayoutTableRow rowContents;
+    rowContents.reserve( mColumns.count() );
+
+    for ( const QgsLayoutTableColumn &column : qgis::as_const( mColumns ) )
+    {
+      int idx = layer->fields().lookupField( column.attribute() );
+
+      QgsConditionalStyle style;
+
       if ( idx != -1 )
       {
-        currentRow << replaceWrapChar( f.attributes().at( idx ) );
+        const QVariant val = f.attributes().at( idx );
+
+        if ( mUseConditionalStyling )
+        {
+          QList<QgsConditionalStyle> styles = conditionalStyles->fieldStyles( layer->fields().at( idx ).name() );
+          styles = QgsConditionalStyle::matchingConditionalStyles( styles, val, context );
+          styles.insert( 0, rowStyle );
+          style = QgsConditionalStyle::compressStyles( styles );
+        }
+
+        QVariant v = replaceWrapChar( val );
+        currentRow << Cell( v, style, f );
+        rowContents << v;
       }
       else
       {
         // Lets assume it's an expression
-        std::unique_ptr< QgsExpression > expression = qgis::make_unique< QgsExpression >( column->attribute() );
+        std::unique_ptr< QgsExpression > expression = qgis::make_unique< QgsExpression >( column.attribute() );
         context.lastScope()->addVariable( QgsExpressionContextScope::StaticVariable( QStringLiteral( "row_number" ), counter + 1, true ) );
         expression->prepare( &context );
         QVariant value = expression->evaluate( &context );
-        currentRow << value;
+
+        currentRow << Cell( value, rowStyle, f );
+        rowContents << value;
       }
     }
 
-    if ( !mShowUniqueRowsOnly || !contentsContainsRow( contents, currentRow ) )
+    if ( mShowUniqueRowsOnly )
     {
-      contents << currentRow;
-      ++counter;
+      if ( contentsContainsRow( existingContents, rowContents ) )
+        continue;
     }
+
+    tempContents << currentRow;
+    existingContents << rowContents;
+    ++counter;
   }
 
-  //sort the list, starting with the last attribute
-  QgsLayoutAttributeTableCompare c;
-  QVector< QPair<int, bool> > sortColumns = sortAttributes();
-  for ( int i = sortColumns.size() - 1; i >= 0; --i )
+  // build final table contents
+  contents.reserve( tempContents.size() );
+  mConditionalStyles.reserve( tempContents.size() );
+  mFeatures.reserve( tempContents.size() );
+  for ( auto it = tempContents.constBegin(); it != tempContents.constEnd(); ++it )
   {
-    c.setSortColumn( sortColumns.at( i ).first );
-    c.setAscending( sortColumns.at( i ).second );
-    std::stable_sort( contents.begin(), contents.end(), c );
+    QgsLayoutTableRow row;
+    QList< QgsConditionalStyle > rowStyles;
+    row.reserve( it->size() );
+    rowStyles.reserve( it->size() );
+
+    for ( auto cellIt = it->constBegin(); cellIt != it->constEnd(); ++cellIt )
+    {
+      row << cellIt->content;
+      rowStyles << cellIt->style;
+      if ( cellIt == it->constBegin() )
+        mFeatures << cellIt->feature;
+    }
+    contents << row;
+    mConditionalStyles << rowStyles;
   }
 
   recalculateTableSize();
   return true;
+}
+
+QgsConditionalStyle QgsLayoutItemAttributeTable::conditionalCellStyle( int row, int column ) const
+{
+  if ( row >= mConditionalStyles.size() )
+    return QgsConditionalStyle();
+
+  return mConditionalStyles.at( row ).at( column );
+}
+
+QgsExpressionContextScope *QgsLayoutItemAttributeTable::scopeForCell( int row, int column ) const
+{
+  std::unique_ptr< QgsExpressionContextScope >scope( QgsLayoutTable::scopeForCell( row, column ) );
+  scope->setFeature( mFeatures.value( row ) );
+  scope->setFields( scope->feature().fields() );
+  return scope.release();
 }
 
 QgsExpressionContext QgsLayoutItemAttributeTable::createExpressionContext() const
@@ -671,43 +723,9 @@ void QgsLayoutItemAttributeTable::removeLayer( const QString &layerId )
     {
       mVectorLayer.setLayer( nullptr );
       //remove existing columns
-      qDeleteAll( mColumns );
       mColumns.clear();
     }
   }
-}
-
-static bool columnsBySortRank( QPair<int, QgsLayoutTableColumn * > a, QPair<int, QgsLayoutTableColumn * > b )
-{
-  return a.second->sortByRank() < b.second->sortByRank();
-}
-
-QVector<QPair<int, bool> > QgsLayoutItemAttributeTable::sortAttributes() const
-{
-  //generate list of all sorted columns
-  QVector< QPair<int, QgsLayoutTableColumn * > > sortedColumns;
-  int idx = 0;
-  for ( QgsLayoutTableColumn *column : mColumns )
-  {
-    if ( column->sortByRank() > 0 )
-    {
-      sortedColumns.append( qMakePair( idx, column ) );
-    }
-    idx++;
-  }
-
-  //sort columns by rank
-  std::sort( sortedColumns.begin(), sortedColumns.end(), columnsBySortRank );
-
-  //generate list of column index, bool for sort direction (to match 2.0 api)
-  QVector<QPair<int, bool> > attributesBySortRank;
-  attributesBySortRank.reserve( sortedColumns.size() );
-  for ( auto &column : qgis::as_const( sortedColumns ) )
-  {
-    attributesBySortRank.append( qMakePair( column.first,
-                                            column.second->sortOrder() == Qt::AscendingOrder ) );
-  }
-  return attributesBySortRank;
 }
 
 void QgsLayoutItemAttributeTable::setWrapString( const QString &wrapString )
@@ -736,6 +754,7 @@ bool QgsLayoutItemAttributeTable::writePropertiesToElement( QDomElement &tableEl
   tableElem.setAttribute( QStringLiteral( "filterFeatures" ), mFilterFeatures ? QStringLiteral( "true" ) : QStringLiteral( "false" ) );
   tableElem.setAttribute( QStringLiteral( "featureFilter" ), mFeatureFilter );
   tableElem.setAttribute( QStringLiteral( "wrapString" ), mWrapString );
+  tableElem.setAttribute( QStringLiteral( "useConditionalStyling" ), mUseConditionalStyling );
 
   if ( mMap )
   {
@@ -754,8 +773,7 @@ bool QgsLayoutItemAttributeTable::writePropertiesToElement( QDomElement &tableEl
 
 bool QgsLayoutItemAttributeTable::readPropertiesFromElement( const QDomElement &itemElem, const QDomDocument &doc, const QgsReadWriteContext &context )
 {
-  QgsVectorLayer *prevLayer = sourceLayer();
-  if ( prevLayer )
+  if ( QgsVectorLayer *prevLayer = sourceLayer() )
   {
     //disconnect from previous layer
     disconnect( prevLayer, &QgsVectorLayer::layerModified, this, &QgsLayoutTable::refreshAttributes );
@@ -779,6 +797,7 @@ bool QgsLayoutItemAttributeTable::readPropertiesFromElement( const QDomElement &
   mFeatureFilter = itemElem.attribute( QStringLiteral( "featureFilter" ), QString() );
   mMaximumNumberOfFeatures = itemElem.attribute( QStringLiteral( "maxFeatures" ), QStringLiteral( "5" ) ).toInt();
   mWrapString = itemElem.attribute( QStringLiteral( "wrapString" ) );
+  mUseConditionalStyling = itemElem.attribute( QStringLiteral( "useConditionalStyling" ), QStringLiteral( "0" ) ).toInt();
 
   //map
   mMapUuid = itemElem.attribute( QStringLiteral( "mapUuid" ) );
@@ -799,7 +818,8 @@ bool QgsLayoutItemAttributeTable::readPropertiesFromElement( const QDomElement &
   mVectorLayer.resolveWeakly( mLayout->project() );
 
   //connect to new layer
-  connect( sourceLayer(), &QgsVectorLayer::layerModified, this, &QgsLayoutTable::refreshAttributes );
+  if ( QgsVectorLayer *newLayer = sourceLayer() )
+    connect( newLayer, &QgsVectorLayer::layerModified, this, &QgsLayoutTable::refreshAttributes );
 
   refreshAttributes();
 

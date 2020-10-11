@@ -28,7 +28,7 @@ class QgsOracleConn;
 class QgsOracleProvider;
 
 
-class QgsOracleFeatureSource : public QgsAbstractFeatureSource
+class QgsOracleFeatureSource final: public QgsAbstractFeatureSource
 {
   public:
     explicit QgsOracleFeatureSource( const QgsOracleProvider *p );
@@ -56,7 +56,8 @@ class QgsOracleFeatureSource : public QgsAbstractFeatureSource
      * destroying the QgsOracleFeatureSource, to ensure that the transaction
      * connection remains valid during the life time of the feature source
      * even if the QgsOracleFeatureSource object which initially created the
-     * connection has since been destroyed. */
+     * connection has since been destroyed.
+    */
     QgsOracleConn *mTransactionConnection = nullptr;
 
 
@@ -65,7 +66,7 @@ class QgsOracleFeatureSource : public QgsAbstractFeatureSource
 };
 
 
-class QgsOracleFeatureIterator : public QgsAbstractFeatureIteratorFromSource<QgsOracleFeatureSource>
+class QgsOracleFeatureIterator final: public QgsAbstractFeatureIteratorFromSource<QgsOracleFeatureSource>
 {
   public:
     QgsOracleFeatureIterator( QgsOracleFeatureSource *source, bool ownSource, const QgsFeatureRequest &request );

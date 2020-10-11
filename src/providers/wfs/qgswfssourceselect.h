@@ -21,6 +21,8 @@
 #include "ui_qgswfssourceselectbase.h"
 #include "qgshelp.h"
 #include "qgswfscapabilities.h"
+#include "qgsoapiflandingpagerequest.h"
+#include "qgsoapifcollection.h"
 #include "qgsproviderregistry.h"
 #include "qgsabstractdatasourcewidget.h"
 #include "qgssqlcomposerdialog.h"
@@ -75,10 +77,13 @@ class QgsWFSSourceSelect: public QgsAbstractDataSourceWidget, private Ui::QgsWFS
 
     /**
      * Stores the available CRS for a server connections.
-     The first string is the typename, the corresponding list
-    stores the CRS for the typename in the form 'EPSG:XXXX'*/
+     * The first string is the typename, the corresponding list
+     * stores the CRS for the typename in the form 'EPSG:XXXX'
+    */
     QMap<QString, QStringList > mAvailableCRS;
-    QgsWfsCapabilities *mCapabilities = nullptr;
+    std::unique_ptr<QgsWfsCapabilities> mCapabilities;
+    std::unique_ptr<QgsOapifLandingPageRequest> mOAPIFLandingPage;
+    std::unique_ptr<QgsOapifCollectionsRequest> mOAPIFCollections;
     QString mUri;            // data source URI
     QgsWFSItemDelegate *mItemDelegate = nullptr;
     QStandardItemModel *mModel = nullptr;
@@ -87,13 +92,15 @@ class QgsWFSSourceSelect: public QgsAbstractDataSourceWidget, private Ui::QgsWFS
     QgsWfsCapabilities::Capabilities mCaps;
     QModelIndex mSQLIndex;
     QgsSQLComposerDialog *mSQLComposerDialog = nullptr;
+    QString mVersion;
 
     /**
      * Returns the best suited CRS from a set of authority ids
-       1. project CRS if contained in the set
-       2. WGS84 if contained in the set
-       3. the first entry in the set else
-    \returns the authority id of the crs or an empty string in case of error*/
+     * 1. project CRS if contained in the set
+     * 2. WGS84 if contained in the set
+     * 3. the first entry in the set else
+     * \returns the authority id of the crs or an empty string in case of error
+    */
     QString getPreferredCrs( const QSet<QString> &crsSet ) const;
 
     void showHelp();
@@ -114,6 +121,8 @@ class QgsWFSSourceSelect: public QgsAbstractDataSourceWidget, private Ui::QgsWFS
     void changeCRSFilter();
     void cmbConnections_activated( int index );
     void capabilitiesReplyFinished();
+    void oapifLandingPageReplyFinished();
+    void oapifCollectionsReplyFinished();
     void btnSave_clicked();
     void btnLoad_clicked();
     void treeWidgetItemDoubleClicked( const QModelIndex &index );
@@ -123,7 +132,11 @@ class QgsWFSSourceSelect: public QgsAbstractDataSourceWidget, private Ui::QgsWFS
     void updateSql();
 
     void populateConnectionList();
-
+    void changeConnection();
+    void startOapifLandingPageRequest();
+    void startOapifCollectionsRequest( const QString &url );
+    void resizeTreeViewAfterModelFill();
+    bool isOapif() const { return mVersion == QLatin1String( "OGC_API_FEATURES" ); }
 };
 
 

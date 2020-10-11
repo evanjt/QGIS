@@ -68,13 +68,17 @@ QgsPackageAlgorithm *QgsPackageAlgorithm::createInstance() const
   return new QgsPackageAlgorithm();
 }
 
-bool QgsPackageAlgorithm::prepareAlgorithm( const QVariantMap &parameters, QgsProcessingContext &context, QgsProcessingFeedback * )
+bool QgsPackageAlgorithm::prepareAlgorithm( const QVariantMap &parameters, QgsProcessingContext &context, QgsProcessingFeedback *feedback )
 {
   const QList< QgsMapLayer * > layers = parameterAsLayerList( parameters, QStringLiteral( "LAYERS" ), context );
   for ( QgsMapLayer *layer : layers )
   {
     mLayers.emplace_back( layer->clone() );
   }
+
+  if ( mLayers.empty() )
+    feedback->reportError( QObject::tr( "No layers selected, geopackage will be empty" ), false );
+
   return true;
 }
 
@@ -92,7 +96,7 @@ QVariantMap QgsPackageAlgorithm::processAlgorithm( const QVariantMap &parameters
     feedback->pushInfo( QObject::tr( "Removing existing file '%1'" ).arg( packagePath ) );
     if ( !QFile( packagePath ).remove() )
     {
-      throw QgsProcessingException( QObject::tr( "Could not remove existing file '%1'" ) );
+      throw QgsProcessingException( QObject::tr( "Could not remove existing file '%1'" ).arg( packagePath ) );
     }
   }
 
@@ -102,9 +106,21 @@ QVariantMap QgsPackageAlgorithm::processAlgorithm( const QVariantMap &parameters
     throw QgsProcessingException( QObject::tr( "GeoPackage driver not found." ) );
   }
 
-  gdal::ogr_datasource_unique_ptr hDS( OGR_Dr_CreateDataSource( hGpkgDriver, packagePath.toUtf8().constData(), nullptr ) );
-  if ( !hDS )
-    throw QgsProcessingException( QObject::tr( "Creation of database failed (OGR error: %1)" ).arg( QString::fromUtf8( CPLGetLastErrorMsg() ) ) );
+  gdal::ogr_datasource_unique_ptr hDS;
+
+  if ( !QFile::exists( packagePath ) )
+  {
+    hDS = gdal::ogr_datasource_unique_ptr( OGR_Dr_CreateDataSource( hGpkgDriver, packagePath.toUtf8().constData(), nullptr ) );
+    if ( !hDS )
+      throw QgsProcessingException( QObject::tr( "Creation of database %1 failed (OGR error: %2)" ).arg( packagePath, QString::fromUtf8( CPLGetLastErrorMsg() ) ) );
+  }
+  else
+  {
+    hDS = gdal::ogr_datasource_unique_ptr( OGROpen( packagePath.toUtf8().constData(), true, nullptr ) );
+    if ( !hDS )
+      throw QgsProcessingException( QObject::tr( "Opening database %1 failed (OGR error: %2)" ).arg( packagePath, QString::fromUtf8( CPLGetLastErrorMsg() ) ) );
+  }
+
 
   bool errored = false;
 
@@ -161,6 +177,18 @@ QVariantMap QgsPackageAlgorithm::processAlgorithm( const QVariantMap &parameters
         feedback->pushDebugInfo( QObject::tr( "Packaging mesh layers is not supported." ) );
         errored = true;
         break;
+
+      case QgsMapLayerType::VectorTileLayer:
+        //not supported
+        feedback->pushDebugInfo( QObject::tr( "Packaging vector tile layers is not supported." ) );
+        errored = true;
+        break;
+
+      case QgsMapLayerType::AnnotationLayer:
+        //not supported
+        feedback->pushDebugInfo( QObject::tr( "Packaging annotation layers is not supported." ) );
+        errored = true;
+        break;
     }
   }
 
@@ -200,7 +228,7 @@ bool QgsPackageAlgorithm::packageVectorLayer( QgsVectorLayer *layer, const QStri
   QString error;
   QString newFilename;
   QString newLayer;
-  if ( QgsVectorFileWriter::writeAsVectorFormat( layer, path, options, &newFilename, &error, &newLayer ) != QgsVectorFileWriter::NoError )
+  if ( QgsVectorFileWriter::writeAsVectorFormatV2( layer, path, context.transformContext(), options, &newFilename, &newLayer, &error ) != QgsVectorFileWriter::NoError )
   {
     feedback->reportError( QObject::tr( "Packaging layer failed: %1" ).arg( error ) );
     return false;

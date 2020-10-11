@@ -19,6 +19,9 @@
 #include "qgsapplication.h"
 #include "qgslogger.h"
 #include "qgsstatusbar.h"
+#include "qgsbrowserdockwidget.h"
+#include "qgsdataitemprovider.h"
+#include "qgsdataitemproviderregistry.h"
 #include "qgsgui.h"
 
 #include <QAction>
@@ -38,6 +41,16 @@
 #include <QStatusBar>
 #include <QMetaObject>
 #include <QSettings>
+
+bool isInternalWidget( const QString &name )
+{
+  static const QStringList internalWidgets = QStringList() << QStringLiteral( "qt_tabwidget_stackedwidget" ) << QStringLiteral( "qt_tabwidget_tabbar" );
+
+  if ( internalWidgets.contains( name ) )
+    return true;
+
+  return false;
+}
 
 #ifdef Q_OS_MACX
 QgsCustomizationDialog::QgsCustomizationDialog( QWidget *parent, QSettings *settings )
@@ -82,7 +95,7 @@ QTreeWidgetItem *QgsCustomizationDialog::item( const QString &path, QTreeWidgetI
   if ( pathCopy.startsWith( '/' ) )
     pathCopy = pathCopy.mid( 1 ); // remove '/'
   QStringList names = pathCopy.split( '/' );
-  pathCopy = QStringList( names.mid( 1 ) ).join( QStringLiteral( "/" ) );
+  pathCopy = QStringList( names.mid( 1 ) ).join( QLatin1Char( '/' ) );
 
   if ( ! widgetItem )
   {
@@ -115,7 +128,7 @@ QTreeWidgetItem *QgsCustomizationDialog::item( const QString &path, QTreeWidgetI
       }
     }
   }
-  QgsDebugMsg( QStringLiteral( "not found" ) );
+  QgsDebugMsgLevel( QStringLiteral( "not found" ), 2 );
   return nullptr;
 }
 
@@ -161,7 +174,7 @@ bool QgsCustomizationDialog::filterItems( const QString &text )
 
 bool QgsCustomizationDialog::itemChecked( const QString &path )
 {
-  QgsDebugMsg( QStringLiteral( "thePath = %1" ).arg( path ) );
+  QgsDebugMsgLevel( QStringLiteral( "thePath = %1" ).arg( path ), 3 );
   QTreeWidgetItem *myItem = item( path );
   if ( !myItem )
     return true;
@@ -170,7 +183,7 @@ bool QgsCustomizationDialog::itemChecked( const QString &path )
 
 void QgsCustomizationDialog::setItemChecked( const QString &path, bool on )
 {
-  QgsDebugMsg( QStringLiteral( "thePath = %1 on = %2" ).arg( path ).arg( on ) );
+  QgsDebugMsgLevel( QStringLiteral( "thePath = %1 on = %2" ).arg( path ).arg( on ), 2 );
   QTreeWidgetItem *myItem = item( path );
   if ( !myItem )
     return;
@@ -250,7 +263,7 @@ void QgsCustomizationDialog::ok()
 }
 void QgsCustomizationDialog::apply()
 {
-  QgsDebugMsg( QStringLiteral( "columnCount = %1" ).arg( treeWidget->columnCount() ) );
+  QgsDebugMsgLevel( QStringLiteral( "columnCount = %1" ).arg( treeWidget->columnCount() ), 3 );
   treeToSettings( mSettings );
   mSettings->setValue( QgsCustomization::instance()->statusPath(), QgsCustomization::User );
   mSettings->sync();
@@ -349,6 +362,7 @@ void QgsCustomizationDialog::init()
   }
 
   treeWidget->insertTopLevelItems( 0, QgsCustomization::instance()->mMainWindowItems );
+  treeWidget->addTopLevelItem( QgsCustomization::instance()->mBrowserItem );
 
   for ( int i = 0; i < treeWidget->topLevelItemCount(); i++ )
     treeWidget->expandItem( treeWidget->topLevelItem( i ) );
@@ -404,7 +418,7 @@ QTreeWidgetItem *QgsCustomizationDialog::readWidgetsXmlNode( const QDomNode &nod
   // There are 47 png files, total 196K in qt/tools/designer/src/components/formeditor/images/
   QString iconName = myElement.attribute( QStringLiteral( "class" ), QString() ).toLower().mid( 1 ) + ".png";
   QString iconPath = QgsApplication::iconPath( "/customization/" + iconName );
-  QgsDebugMsg( "iconPath = " + iconPath );
+  QgsDebugMsgLevel( "iconPath = " + iconPath, 3 );
   if ( QFile::exists( iconPath ) )
   {
     myItem->setIcon( 0, QIcon( iconPath ) );
@@ -426,6 +440,26 @@ QTreeWidgetItem *QgsCustomizationDialog::readWidgetsXmlNode( const QDomNode &nod
   return myItem;
 }
 
+QAction *QgsCustomizationDialog::findAction( QToolButton *toolbutton )
+{
+  if ( !toolbutton->parent() )
+    return toolbutton->defaultAction();
+
+  // We need to find the QAction that was returned from the call of "QToolBar::addWidget".
+  // This is a defaultAction in most cases. But when QToolButton is composed of multiple actions,
+  // (e.g. "Select Features by ..." button) we need to go through the parent widget to search for the
+  // parent action name.
+  const QList<QWidgetAction *> tbWidgetActions = toolbutton->parent()->findChildren<QWidgetAction *>( QString(), Qt::FindDirectChildrenOnly );
+  for ( QWidgetAction *act : tbWidgetActions )
+  {
+    QWidget *widget = act->defaultWidget();
+    if ( widget == toolbutton )
+      return act;
+  }
+
+  return toolbutton->defaultAction();
+}
+
 bool QgsCustomizationDialog::switchWidget( QWidget *widget, QMouseEvent *e )
 {
   Q_UNUSED( e )
@@ -433,7 +467,7 @@ bool QgsCustomizationDialog::switchWidget( QWidget *widget, QMouseEvent *e )
     return false;
 
   QString path = widgetPath( widget );
-  QgsDebugMsg( "path = " + path );
+  QgsDebugMsgLevel( "path = " + path, 3 );
 
   if ( path.contains( QLatin1String( "/QgsCustomizationDialogBase" ) ) )
   {
@@ -451,7 +485,7 @@ bool QgsCustomizationDialog::switchWidget( QWidget *widget, QMouseEvent *e )
     else if ( widget->inherits( "QToolButton" ) )
     {
       QToolButton *toolbutton = qobject_cast<QToolButton *>( widget );
-      QAction *action = toolbutton->defaultAction();
+      QAction *action = findAction( toolbutton );
       if ( !action )
         return false;
       QString toolbarName = widget->parent()->objectName();
@@ -470,10 +504,10 @@ bool QgsCustomizationDialog::switchWidget( QWidget *widget, QMouseEvent *e )
     path = "/Widgets" + path;
   }
 
-  QgsDebugMsg( "path final = " + path );
+  QgsDebugMsgLevel( "path final = " + path, 3 );
   bool on = !itemChecked( path );
 
-  QgsDebugMsg( QStringLiteral( "on = %1" ).arg( on ) );
+  QgsDebugMsgLevel( QStringLiteral( "on = %1" ).arg( on ), 3 );
 
   setItemChecked( path, on );
   QTreeWidgetItem *myItem = item( path );
@@ -501,7 +535,7 @@ QString QgsCustomizationDialog::widgetPath( QWidget *widget, const QString &path
 
   QString pathCopy = path;
 
-  if ( !QgsCustomization::sInternalWidgets.contains( name ) )
+  if ( !isInternalWidget( name ) )
   {
     if ( !pathCopy.isEmpty() )
     {
@@ -686,7 +720,41 @@ void QgsCustomization::createTreeItemStatus()
   mMainWindowItems << topItem;
 }
 
-QStringList QgsCustomization::sInternalWidgets = QStringList() <<  QStringLiteral( "qt_tabwidget_stackedwidget" ) << QStringLiteral( "qt_tabwidget_tabbar" );
+void QgsCustomization::createTreeItemBrowser()
+{
+  if ( mBrowserItem )
+    return;
+
+  QStringList data;
+  data << QStringLiteral( "Browser" );
+  mBrowserItem = new QTreeWidgetItem( data );
+  QVector<QStringList> items;
+
+  items << QStringList( {QStringLiteral( "special:Home" ), tr( "Home Folder" )} );
+  items << QStringList( {QStringLiteral( "special:ProjectHome" ), tr( "Project Home Folder" )} );
+  items << QStringList( {QStringLiteral( "special:Favorites" ), tr( "Favorites Folder" )} );
+  items << QStringList( {QStringLiteral( "special:Drives" ), tr( "Drive Folders (e.g. C:\\)" )} );
+  items << QStringList( {QStringLiteral( "special:Volumes" ), tr( "Volume Folder (MacOS only)" )} );
+
+  const auto constProviders = QgsApplication::dataItemProviderRegistry()->providers();
+  for ( QgsDataItemProvider *pr : constProviders )
+  {
+    int capabilities = pr->capabilities();
+    if ( capabilities != QgsDataProvider::NoDataCapabilities )
+    {
+      QStringList item;
+      item << pr->name() << QObject::tr( "Data Item Provider: %1" ).arg( pr->name() );
+      items << item;
+    }
+  }
+
+  for ( const QStringList &strs : items )
+  {
+    QTreeWidgetItem *item = new QTreeWidgetItem( mBrowserItem, strs );
+    item->setFlags( Qt::ItemIsEnabled | Qt::ItemIsUserCheckable | Qt::ItemIsSelectable );
+    item->setCheckState( 0, Qt::Checked );
+  }
+}
 
 QgsCustomization *QgsCustomization::sInstance = nullptr;
 QgsCustomization *QgsCustomization::instance()
@@ -775,7 +843,7 @@ void QgsCustomization::updateMainWindow( QMenu *toolBarMenu )
             continue;
           }
 
-          if ( action->metaObject()->className() == QStringLiteral( "QWidgetAction" ) )
+          if ( action->metaObject()->className() == QLatin1String( "QWidgetAction" ) )
           {
             mSettings->beginGroup( action->objectName() );
             QWidgetAction *widgetAction = qobject_cast<QWidgetAction *>( action );
@@ -889,9 +957,9 @@ void QgsCustomization::customizeWidget( QWidget *widget, QEvent *event, QSetting
   if ( !widget->inherits( "QDialog" ) )
     return;
 
-  QgsDebugMsg( QStringLiteral( "objectName = %1 event type = %2" ).arg( widget->objectName() ).arg( event->type() ) );
+  QgsDebugMsgLevel( QStringLiteral( "objectName = %1 event type = %2" ).arg( widget->objectName() ).arg( event->type() ), 3 );
 
-  QgsDebugMsg( QStringLiteral( "%1 x %2" ).arg( widget->metaObject()->className(), QDialog::staticMetaObject.className() ) );
+  QgsDebugMsgLevel( QStringLiteral( "%1 x %2" ).arg( widget->metaObject()->className(), QDialog::staticMetaObject.className() ), 3 );
   QString path = QStringLiteral( "/Customization/Widgets/" );
 
   QgsCustomization::customizeWidget( path, widget, settings );
@@ -906,7 +974,7 @@ void QgsCustomization::customizeWidget( const QString &path, QWidget *widget, QS
   // qt_tabwidget_stackedwidget, such widgets do not appear in the tree generated
   // from ui files and do not have sense from user point of view -> skip
 
-  if ( !QgsCustomization::sInternalWidgets.contains( name ) )
+  if ( !isInternalWidget( name ) )
   {
     myPath = path + '/' + name;
   }
@@ -932,13 +1000,13 @@ void QgsCustomization::customizeWidget( const QString &path, QWidget *widget, QS
       QLayout *l = widget->layout();
       if ( l )
       {
-        QgsDebugMsg( QStringLiteral( "remove" ) );
+        QgsDebugMsgLevel( QStringLiteral( "remove" ), 3 );
         QgsCustomization::removeFromLayout( l, w );
         w->hide();
       }
       else
       {
-        QgsDebugMsg( QStringLiteral( "hide" ) );
+        QgsDebugMsgLevel( QStringLiteral( "hide" ), 3 );
         w->hide();
       }
     }
@@ -965,6 +1033,34 @@ void QgsCustomization::removeFromLayout( QLayout *layout, QWidget *widget )
       QgsCustomization::removeFromLayout( l, widget );
     }
   }
+}
+
+void QgsCustomization::updateBrowserWidget( QgsBrowserDockWidget *widget )
+{
+  createTreeItemBrowser();
+
+  if ( !widget )
+    return;
+
+  if ( !mEnabled )
+    return;
+
+  if ( !mBrowserItem )
+    return;
+
+  QStringList disabledDataItems;
+  mSettings->beginGroup( QStringLiteral( "Customization/Browser" ) );
+  for ( int i = 0; i < mBrowserItem->childCount(); ++i )
+  {
+    const QTreeWidgetItem *item = mBrowserItem->child( i );
+    if ( item && !mSettings->value( item->text( 0 ), true ).toBool() )
+    {
+      disabledDataItems << item->text( 0 );
+    }
+  }
+  mSettings->endGroup();
+
+  widget->setDisabledDataItemsKeys( disabledDataItems );
 }
 
 void QgsCustomization::preNotify( QObject *receiver, QEvent *event, bool *done )
@@ -1023,8 +1119,8 @@ void QgsCustomization::loadDefault()
 
   // Check customization state
   int status = mySettings.value( mStatusPath, QgsCustomization::NotSet ).toInt();
-  QgsDebugMsg( "Status path = " + mStatusPath );
-  QgsDebugMsg( QStringLiteral( "status = %1" ).arg( status ) );
+  QgsDebugMsgLevel( "Status path = " + mStatusPath, 2 );
+  QgsDebugMsgLevel( QStringLiteral( "status = %1" ).arg( status ), 2 );
   if ( status == QgsCustomization::User || status == QgsCustomization::Default )
     return;
 
@@ -1032,14 +1128,14 @@ void QgsCustomization::loadDefault()
   QString path = QgsApplication::pkgDataPath() +  "/resources/customization.ini";
   if ( ! QFile::exists( path ) )
   {
-    QgsDebugMsg( "Default customization not found in " + path );
+    QgsDebugMsgLevel( "Default customization not found in " + path, 2 );
     return;
   }
-  QgsDebugMsg( "Loading default customization from " + path );
+  QgsDebugMsgLevel( "Loading default customization from " + path, 2 );
 
   QSettings fileSettings( path );
   QStringList keys = fileSettings.allKeys();
-  QgsDebugMsg( QStringLiteral( "size = %1" ).arg( keys.size() ) );
+  QgsDebugMsgLevel( QStringLiteral( "size = %1" ).arg( keys.size() ), 2 );
   QStringList::const_iterator i;
   for ( i = keys.constBegin(); i != keys.constEnd(); ++i )
   {

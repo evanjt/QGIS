@@ -52,14 +52,14 @@ enum QgsOraclePrimaryKeyType
 };
 
 /**
-  \class QgsOracleProvider
-  \brief Data provider for oracle layers.
-
-  This provider implements the
-  interface defined in the QgsDataProvider class to provide access to spatial
-  data residing in a oracle enabled database.
+  * \class QgsOracleProvider
+  * \brief Data provider for oracle layers.
+  *
+  * This provider implements the
+  * interface defined in the QgsDataProvider class to provide access to spatial
+  * data residing in a oracle enabled database.
   */
-class QgsOracleProvider : public QgsVectorDataProvider
+class QgsOracleProvider final: public QgsVectorDataProvider
 {
     Q_OBJECT
     Q_PROPERTY( QString workspace READ getWorkspace WRITE setWorkspace )
@@ -84,8 +84,10 @@ class QgsOracleProvider : public QgsVectorDataProvider
      * \param uri String containing the required parameters to connect to the database
      * and query the table.
      * \param options generic data provider options
+     * \param flags generic data provider flags
      */
-    explicit QgsOracleProvider( QString const &uri, const QgsDataProvider::ProviderOptions &options );
+    explicit QgsOracleProvider( QString const &uri, const QgsDataProvider::ProviderOptions &options,
+                                QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
     //! Destructor
     ~QgsOracleProvider() override;
@@ -127,6 +129,14 @@ class QgsOracleProvider : public QgsVectorDataProvider
      */
     bool determinePrimaryKey();
 
+    /**
+     * Determine the fields making up the primary key from the uri attribute keyColumn
+     *
+     * Fills mPrimaryKeyType and mPrimaryKeyAttrs
+     * from mUri
+     */
+    void determinePrimaryKeyFromUriKeyColumn();
+
     QgsFields fields() const override;
     QString dataComment() const override;
 
@@ -142,7 +152,9 @@ class QgsOracleProvider : public QgsVectorDataProvider
     QgsAttributeList pkAttributeIndexes() const override { return mPrimaryKeyAttrs; }
     QVariant defaultValue( QString fieldName, QString tableName = QString(), QString schemaName = QString() );
     QVariant defaultValue( int fieldId ) const override;
-    bool addFeatures( QgsFeatureList &flist, QgsFeatureSink::Flags flags = nullptr ) override;
+    QString defaultValueClause( int fieldId ) const override;
+    bool skipConstraintCheck( int fieldIndex, QgsFieldConstraints::Constraint constraint, const QVariant &value = QVariant() ) const override;
+    bool addFeatures( QgsFeatureList &flist, QgsFeatureSink::Flags flags = QgsFeatureSink::Flags() ) override;
     bool deleteFeatures( const QgsFeatureIds &id ) override;
     bool addAttributes( const QList<QgsField> &attributes ) override;
     bool deleteAttributes( const QgsAttributeIds &ids ) override;
@@ -181,7 +193,11 @@ class QgsOracleProvider : public QgsVectorDataProvider
   private:
     QString whereClause( QgsFeatureId featureId, QVariantList &args ) const;
     QString pkParamWhereClause() const;
-    QString paramValue( QString fieldvalue, const QString &defaultValue ) const;
+
+    /**
+     * Evaluates the given expression string server-side and convert the result to the given type
+     */
+    QVariant evaluateDefaultExpression( const QString &value, const QVariant::Type &fieldType ) const;
     void appendGeomParam( const QgsGeometry &geom, QSqlQuery &qry ) const;
     void appendPkParams( QgsFeatureId fid, QSqlQuery &qry ) const;
 
@@ -245,6 +261,12 @@ class QgsOracleProvider : public QgsVectorDataProvider
     QList<int> mPrimaryKeyAttrs;
     QString mPrimaryKeyDefault;
 
+    /**
+     * For each attributes, true if the attribute is always generated (virtual column
+     * and identity always generated columns)
+     */
+    QList<bool> mAlwaysGenerated;
+
     QString mGeometryColumn;           //!< Name of the geometry column
     mutable QgsRectangle mLayerExtent; //!< Rectangle that contains the extent (bounding box) of the layer
     mutable long mFeaturesCounted;     //!< Number of features in the layer
@@ -297,10 +319,12 @@ class QgsOracleProvider : public QgsVectorDataProvider
 
       private:
         QString mWhat;
+
+        OracleException &operator= ( const OracleException & ) = delete;
     };
 
     // A function that determines if the given schema.table.column
-    // contains unqiue entries
+    // contains unique entries
     bool uniqueData( QString query, QString colName );
 
     void disconnectDb();
@@ -313,6 +337,7 @@ class QgsOracleProvider : public QgsVectorDataProvider
 
     bool mHasSpatialIndex;                   //!< Geometry column is indexed
     QString mSpatialIndexName;               //!< Name of spatial index of geometry column
+    int mOracleVersion;                      //!< Oracle database version
 
     std::shared_ptr<QgsOracleSharedData> mShared;
 
@@ -349,7 +374,8 @@ class QgsOracleUtils
 /**
  * Data shared between provider class and its feature sources. Ideally there should
  *  be as few members as possible because there could be simultaneous reads/writes
- *  from different threads and therefore locking has to be involved. */
+ *  from different threads and therefore locking has to be involved.
+*/
 class QgsOracleSharedData
 {
   public:
@@ -369,8 +395,10 @@ class QgsOracleSharedData
     QMap<QgsFeatureId, QVariantList> mFidToKey;      // map feature back to fea
 };
 
-class QgsOracleProviderMetadata: public QgsProviderMetadata
+class QgsOracleProviderMetadata final: public QgsProviderMetadata
 {
+    Q_OBJECT
+
   public:
     QgsOracleProviderMetadata();
     QString getStyleById( const QString &uri, QString styleId, QString &errCause ) override;
@@ -378,21 +406,21 @@ class QgsOracleProviderMetadata: public QgsProviderMetadata
     QString loadStyle( const QString &uri, QString &errCause ) override;
     bool saveStyle( const QString &uri, const QString &qmlStyle, const QString &sldStyle, const QString &styleName,
                     const QString &styleDescription, const QString &uiFileContent, bool useAsDefault, QString &errCause ) override;
-    void cleanupProvider();
+    void cleanupProvider() override;
     QgsVectorLayerExporter::ExportError createEmptyLayer( const QString &uri,
         const QgsFields &fields, QgsWkbTypes::Type wkbType,
         const QgsCoordinateReferenceSystem &srs, bool overwrite,
         QMap<int, int> &oldToNewAttrIdxMap, QString &errorMessage,
         const QMap<QString, QVariant> *options ) override;
 
-    QgsOracleProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options ) override;
+    QgsOracleProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options, QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() ) override;
     QList<QgsDataItemProvider *> dataItemProviders() const override;
 
     QgsTransaction *createTransaction( const QString &connString ) override;
 };
 
 #ifdef HAVE_GUI
-class QgsOracleProviderGuiMetadata: public QgsProviderGuiMetadata
+class QgsOracleProviderGuiMetadata final: public QgsProviderGuiMetadata
 {
   public:
     QgsOracleProviderGuiMetadata();

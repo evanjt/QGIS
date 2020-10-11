@@ -56,7 +56,7 @@ QgsExpression TestQgsSQLiteExpressionCompiler::makeExpression( const int length 
   {
     expString.append( QStringLiteral( "(\"Z\" >= %1) AND (\"Bottom\" <= %2)" ).arg( i ).arg( i + 1 ) );
   }
-  QgsExpression exp( expString.join( QStringLiteral( ") OR (" ) ).prepend( '(' ).append( ')' ) );
+  QgsExpression exp( expString.join( QLatin1String( ") OR (" ) ).prepend( '(' ).append( ')' ) );
   return exp;
 }
 
@@ -101,7 +101,15 @@ void TestQgsSQLiteExpressionCompiler::testCompiler()
   QCOMPARE( compiler.compile( &exp ), QgsSqlExpressionCompiler::Result::Complete );
   // Check that parenthesis matches
   QCOMPARE( compiler.result().count( '(' ),  compiler.result().count( ')' ) );
-  QCOMPARE( compiler.result(), QString( "((((\"Z\" >= 0) AND (\"Bottom\" <= 1)) OR ((\"Z\" >= 1) AND (\"Bottom\" <= 2))) OR ((\"Z\" >= 2) AND (\"Bottom\" <= 3)))" ) );
+  QCOMPARE( compiler.result(), QStringLiteral( "((((\"Z\" >= 0) AND (\"Bottom\" <= 1)) OR ((\"Z\" >= 1) AND (\"Bottom\" <= 2))) OR ((\"Z\" >= 2) AND (\"Bottom\" <= 3)))" ) );
+
+  QgsExpression ilike( QStringLiteral( "'a' ilike 'A'" ) );
+  QCOMPARE( compiler.compile( &ilike ), QgsSqlExpressionCompiler::Result::Complete );
+  QCOMPARE( compiler.result(), QStringLiteral( "lower('a') LIKE lower('A') ESCAPE '\\'" ) );
+
+  QgsExpression nilike( QStringLiteral( "'a' not ilike 'A'" ) );
+  QCOMPARE( compiler.compile( &nilike ), QgsSqlExpressionCompiler::Result::Complete );
+  QCOMPARE( compiler.result(), QStringLiteral( "lower('a') NOT LIKE lower('A') ESCAPE '\\'" ) );
 }
 
 

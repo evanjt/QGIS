@@ -26,10 +26,12 @@
 #include <QSet>
 #include <QDomDocument>
 #include <QDomElement>
+#include <QPainterPath>
 
 #include "qgssymbol.h"
 #include "qgsfields.h"
 #include "qgspropertycollection.h"
+#include "qgspainteffect.h"
 
 class QPainter;
 class QSize;
@@ -38,7 +40,6 @@ class QPolygonF;
 class QgsDxfExport;
 class QgsExpression;
 class QgsRenderContext;
-class QgsPaintEffect;
 
 #ifndef SIP_RUN
 typedef QMap<QString, QString> QgsStringMap;
@@ -74,6 +75,8 @@ class CORE_EXPORT QgsSymbolLayer
           sipType = sipType_QgsRasterMarkerSymbolLayer;
         else if ( sipCpp->layerType() == "VectorField" )
           sipType = sipType_QgsVectorFieldSymbolLayer;
+        else if ( sipCpp->layerType() == "MaskMarker" )
+          sipType = sipType_QgsMaskMarkerSymbolLayer;
         else
           sipType = sipType_QgsMarkerSymbolLayer;
         break;
@@ -106,6 +109,8 @@ class CORE_EXPORT QgsSymbolLayer
           sipType = sipType_QgsGradientFillSymbolLayer;
         else if ( sipCpp->layerType() == "ShapeburstFill" )
           sipType = sipType_QgsShapeburstFillSymbolLayer;
+        else if ( sipCpp->layerType() == "RandomMarkerFill" )
+          sipType = sipType_QgsRandomMarkerFillSymbolLayer;
         else
           sipType = sipType_QgsFillSymbolLayer;
         break;
@@ -177,6 +182,13 @@ class CORE_EXPORT QgsSymbolLayer
       PropertyArrowType, //!< Arrow type
       PropertyOffsetX, //!< Horizontal offset
       PropertyOffsetY, //!< Vertical offset
+      PropertyPointCount, //!< Point count
+      PropertyRandomSeed, //!< Random number seed
+      PropertyClipPoints, //!< Whether markers should be clipped to polygon boundaries
+      PropertyDensityArea, //!< Density area
+      PropertyFontFamily, //!< Font family
+      PropertyFontStyle, //!< Font style
+      PropertyDashPatternOffset, //!< Dash pattern offset
     };
 
     /**
@@ -221,22 +233,26 @@ class CORE_EXPORT QgsSymbolLayer
 
     /**
      * Set stroke color. Supported by marker and fill layers.
-     * \since QGIS 2.1 */
+     * \since QGIS 2.1
+    */
     virtual void setStrokeColor( const QColor &color ) { Q_UNUSED( color ) }
 
     /**
      * Gets stroke color. Supported by marker and fill layers.
-     * \since QGIS 2.1 */
+     * \since QGIS 2.1
+    */
     virtual QColor strokeColor() const { return QColor(); }
 
     /**
      * Set fill color. Supported by marker and fill layers.
-     * \since QGIS 2.1 */
+     * \since QGIS 2.1
+    */
     virtual void setFillColor( const QColor &color ) { Q_UNUSED( color ) }
 
     /**
      * Gets fill color. Supported by marker and fill layers.
-     * \since QGIS 2.1 */
+     * \since QGIS 2.1
+    */
     virtual QColor fillColor() const { return QColor(); }
 
     /**
@@ -245,8 +261,72 @@ class CORE_EXPORT QgsSymbolLayer
      */
     virtual QString layerType() const = 0;
 
+    /**
+     * Called before a set of rendering operations commences on the supplied render \a context.
+     *
+     * This is always followed by a call to stopRender() after all rendering operations
+     * have been completed.
+     *
+     * Subclasses can use this method to prepare for a set of rendering operations, e.g. by
+     * pre-evaluating paths or images to render, and performing other one-time optimisations.
+     *
+     * \see startFeatureRender()
+     * \see stopRender()
+     */
     virtual void startRender( QgsSymbolRenderContext &context ) = 0;
+
+    /**
+     * Called after a set of rendering operations has finished on the supplied render \a context.
+     *
+     * This is always preceded by a call to startRender() before all rendering operations
+     * are commenced.
+     *
+     * Subclasses can use this method to cleanup after a set of rendering operations.
+     *
+     * \see startRender()
+     * \see stopFeatureRender()
+     */
     virtual void stopRender( QgsSymbolRenderContext &context ) = 0;
+
+    /**
+     * Called before the layer will be rendered for a particular \a feature.
+     *
+     * This is always followed by a call to stopFeatureRender() after the feature
+     * has been completely rendered (i.e. all parts have been rendered).
+     *
+     * The default implementation does nothing.
+     *
+     * \note In some circumstances, startFeatureRender() and stopFeatureRender() may not be called
+     * before a symbol layer is rendered. E.g., when a symbol layer is being rendered in isolation
+     * and not as a result of rendering a feature (for instance, when rendering a legend patch or other
+     * non-feature based shape).
+     *
+     * \see stopFeatureRender()
+     * \see startRender()
+     *
+     * \since QGIS 3.12
+     */
+    virtual void startFeatureRender( const QgsFeature &feature, QgsRenderContext &context );
+
+    /**
+     * Called after the layer has been rendered for a particular \a feature.
+     *
+     * This is always preceded by a call to startFeatureRender() just before the feature
+     * will be rendered.
+     *
+     * The default implementation does nothing.
+     *
+     * \note In some circumstances, startFeatureRender() and stopFeatureRender() may not be called
+     * before a symbol layer is rendered. E.g., when a symbol layer is being rendered in isolation
+     * and not as a result of rendering a feature (for instance, when rendering a legend patch or other
+     * non-feature based shape).
+     *
+     * \see startFeatureRender()
+     * \see stopRender()
+     *
+     * \since QGIS 3.12
+     */
+    virtual void stopFeatureRender( const QgsFeature &feature, QgsRenderContext &context );
 
     /**
      * Shall be reimplemented by subclasses to create a deep copy of the instance.
@@ -285,10 +365,11 @@ class CORE_EXPORT QgsSymbolLayer
 
     /**
      * Returns the estimated maximum distance which the layer style will bleed outside
-      the drawn shape when drawn in the specified /a context. For example, polygons
-      drawn with an stroke will draw half the width
-      of the stroke outside of the polygon. This amount is estimated, since it may
-      be affected by data defined symbology rules.*/
+     * the drawn shape when drawn in the specified /a context. For example, polygons
+     * drawn with an stroke will draw half the width
+     * of the stroke outside of the polygon. This amount is estimated, since it may
+     * be affected by data defined symbology rules.
+    */
     virtual double estimateMaxBleed( const QgsRenderContext &context ) const { Q_UNUSED( context ) return 0; }
 
     /**
@@ -425,6 +506,13 @@ class CORE_EXPORT QgsSymbolLayer
      * \since QGIS 3.4.5
      */
     virtual bool hasDataDefinedProperties() const;
+
+    /**
+     * Returns masks defined by this symbol layer.
+     * This is a list of symbol layers of other layers that should be occluded.
+     * \since QGIS 3.12
+     */
+    virtual QgsSymbolLayerReferenceList masks() const;
 
   protected:
 
@@ -848,7 +936,7 @@ class CORE_EXPORT QgsLineSymbolLayer : public QgsSymbolLayer
      *
      * \see renderPolyline()
      */
-    virtual void renderPolygonStroke( const QPolygonF &points, QList<QPolygonF> *rings, QgsSymbolRenderContext &context );
+    virtual void renderPolygonStroke( const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context );
 
     /**
      * Sets the \a width of the line symbol layer.
@@ -1017,7 +1105,12 @@ class CORE_EXPORT QgsFillSymbolLayer : public QgsSymbolLayer
     //! QgsFillSymbolLayer cannot be copied
     QgsFillSymbolLayer &operator=( const QgsFillSymbolLayer &other ) = delete;
 
-    virtual void renderPolygon( const QPolygonF &points, QList<QPolygonF> *rings, QgsSymbolRenderContext &context ) = 0;
+    /**
+     * Renders the fill symbol layer for the polygon whose outer ring is defined by \a points, using the given render \a context.
+     *
+     * The \a rings argument optionally specifies a list of polygon rings to render as holes.
+     */
+    virtual void renderPolygon( const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context ) = 0;
 
     void drawPreviewIcon( QgsSymbolRenderContext &context, QSize size ) override;
 
@@ -1027,7 +1120,7 @@ class CORE_EXPORT QgsFillSymbolLayer : public QgsSymbolLayer
   protected:
     QgsFillSymbolLayer( bool locked = false );
     //! Default method to render polygon
-    void _renderPolygon( QPainter *p, const QPolygonF &points, const QList<QPolygonF> *rings, QgsSymbolRenderContext &context );
+    void _renderPolygon( QPainter *p, const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context );
 
     double mAngle = 0.0;
 

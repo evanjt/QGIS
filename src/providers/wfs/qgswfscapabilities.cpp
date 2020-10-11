@@ -26,6 +26,7 @@
 
 #include <QDomDocument>
 #include <QStringList>
+#include <QUrlQuery>
 
 QgsWfsCapabilities::QgsWfsCapabilities( const QString &uri, const QgsDataProvider::ProviderOptions &options )
   : QgsWfsRequest( QgsWFSDataSourceURI( uri ) ),
@@ -41,16 +42,18 @@ QgsWfsCapabilities::QgsWfsCapabilities( const QString &uri, const QgsDataProvide
 bool QgsWfsCapabilities::requestCapabilities( bool synchronous, bool forceRefresh )
 {
   QUrl url( mUri.baseURL( ) );
-  url.addQueryItem( QStringLiteral( "REQUEST" ), QStringLiteral( "GetCapabilities" ) );
+  QUrlQuery query( url );
+  query.addQueryItem( QStringLiteral( "REQUEST" ), QStringLiteral( "GetCapabilities" ) );
 
   const QString &version = mUri.version();
   if ( version == QgsWFSConstants::VERSION_AUTO )
     // MapServer honours the order with the first value being the preferred one
-    url.addQueryItem( QStringLiteral( "ACCEPTVERSIONS" ), QStringLiteral( "2.0.0,1.1.0,1.0.0" ) );
+    query.addQueryItem( QStringLiteral( "ACCEPTVERSIONS" ), QStringLiteral( "2.0.0,1.1.0,1.0.0" ) );
   else
-    url.addQueryItem( QStringLiteral( "VERSION" ), version );
+    query.addQueryItem( QStringLiteral( "VERSION" ), version );
 
-  if ( !sendGET( url, synchronous, forceRefresh ) )
+  url.setQuery( query );
+  if ( !sendGET( url, QString(), synchronous, forceRefresh ) )
   {
     emit gotCapabilities();
     return false;
@@ -129,13 +132,15 @@ class CPLXMLTreeUniquePointer
     /**
      * Returns the node pointer/
      * Modifying the contents pointed to by the return is allowed.
-     * \return the node pointer */
+     * \return the node pointer
+    */
     CPLXMLNode *get() const { return the_data_; }
 
     /**
      * Returns the node pointer/
      * Modifying the contents pointed to by the return is allowed.
-     * \return the node pointer */
+     * \return the node pointer
+    */
     CPLXMLNode *operator->() const { return get(); }
 
   private:
@@ -145,6 +150,11 @@ class CPLXMLTreeUniquePointer
 
 void QgsWfsCapabilities::capabilitiesReplyFinished()
 {
+  if ( mErrorCode != QgsBaseNetworkRequest::NoError )
+  {
+    emit gotCapabilities();
+    return;
+  }
   const QByteArray &buffer = mResponse;
 
   QgsDebugMsgLevel( QStringLiteral( "parsing capabilities: " ) + buffer, 4 );
@@ -154,7 +164,8 @@ void QgsWfsCapabilities::capabilitiesReplyFinished()
   QDomDocument capabilitiesDocument;
   if ( !capabilitiesDocument.setContent( buffer, true, &capabilitiesDocError ) )
   {
-    mErrorCode = QgsWfsRequest::XmlError;
+    mErrorCode = QgsWfsRequest::ApplicationLevelError;
+    mAppLevelError = ApplicationLevelError::XmlError;
     mErrorMessage = capabilitiesDocError;
     emit gotCapabilities();
     return;
@@ -167,11 +178,24 @@ void QgsWfsCapabilities::capabilitiesReplyFinished()
   // handle exceptions
   if ( doc.tagName() == QLatin1String( "ExceptionReport" ) )
   {
-    QDomNode ex = doc.firstChild();
+    QDomNode ex = doc.firstChild(); // Get Exception element
     QString exc = ex.toElement().attribute( QStringLiteral( "exceptionCode" ), QStringLiteral( "Exception" ) );
-    QDomElement ext = ex.firstChild().toElement();
+    QDomElement ext = ex.firstChild().toElement(); // Get ExceptionText element
     mErrorCode = QgsWfsRequest::ServerExceptionError;
     mErrorMessage = exc + ": " + ext.firstChild().nodeValue();
+    emit gotCapabilities();
+    return;
+  }
+
+  // handle WMS exceptions as well (to be nice with users...)
+  // See https://github.com/qgis/QGIS/issues/29866
+  if ( doc.tagName() == QLatin1String( "ServiceExceptionReport" ) )
+  {
+    QDomNode ex = doc.firstChild(); // Get ServiceExceptionReport element
+    QString exc = ex.toElement().attribute( QStringLiteral( "code" ), QStringLiteral( "Exception" ) );
+    QDomElement ext = ex.toElement();
+    mErrorCode = QgsWfsRequest::ServerExceptionError;
+    mErrorMessage = exc + ": " + ext.firstChild().nodeValue().trimmed();
     emit gotCapabilities();
     return;
   }
@@ -184,17 +208,18 @@ void QgsWfsCapabilities::capabilitiesReplyFinished()
        !mCaps.version.startsWith( QLatin1String( "1.1" ) ) &&
        !mCaps.version.startsWith( QLatin1String( "2.0" ) ) )
   {
-    mErrorCode = WFSVersionNotSupported;
+    mErrorCode = QgsWfsRequest::ApplicationLevelError;
+    mAppLevelError = ApplicationLevelError::VersionNotSupported;
     mErrorMessage = tr( "WFS version %1 not supported" ).arg( mCaps.version );
     emit gotCapabilities();
     return;
   }
 
   // WFS 2.0 implementation are supposed to implement resultType=hits, and some
-  // implementations (GeoServer) might advertize it, whereas others (MapServer) do not.
+  // implementations (GeoServer) might advertise it, whereas others (MapServer) do not.
   // WFS 1.1 implementation too I think, but in the examples of the GetCapabilities
   // response of the WFS 1.1 standard (and in common implementations), this is
-  // explicitly advertized
+  // explicitly advertised
   if ( mCaps.version.startsWith( QLatin1String( "2.0" ) ) )
     mCaps.supportsHits = true;
 
@@ -366,7 +391,7 @@ void QgsWfsCapabilities::capabilitiesReplyFinished()
   bool updateCap = false;
   bool deleteCap = false;
   // WFS < 2
-  if ( mCaps.version.startsWith( QLatin1String( "1" ) ) )
+  if ( mCaps.version.startsWith( QLatin1Char( '1' ) ) )
   {
     parseSupportedOperations( featureTypeListElem.firstChildElement( QStringLiteral( "Operations" ) ),
                               insertCap,
@@ -467,7 +492,7 @@ void QgsWfsCapabilities::capabilitiesReplyFinished()
     if ( defaultCRSList.length() > 0 )
     {
       QString srsname( defaultCRSList.at( 0 ).toElement().text() );
-      // Some servers like Geomedia advertize EPSG:XXXX even in WFS 1.1 or 2.0
+      // Some servers like Geomedia advertise EPSG:XXXX even in WFS 1.1 or 2.0
       if ( srsname.startsWith( QLatin1String( "EPSG:" ) ) )
         mCaps.useEPSGColumnFormat = true;
       featureType.crslist.append( NormalizeSRSName( srsname ) );
@@ -702,7 +727,7 @@ void QgsWfsCapabilities::parseSupportedOperations( const QDomElement &operations
 static QgsWfsCapabilities::Function getSpatialPredicate( const QString &name )
 {
   QgsWfsCapabilities::Function f;
-  // WFS 1.0 advertize Intersect, but for conveniency we internally convert it to Intersects
+  // WFS 1.0 advertise Intersect, but for conveniency we internally convert it to Intersects
   if ( name == QLatin1String( "Intersect" ) )
     f.name = QStringLiteral( "ST_Intersects" );
   else

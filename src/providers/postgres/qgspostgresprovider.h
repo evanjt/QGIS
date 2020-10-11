@@ -38,14 +38,14 @@ class QgsPostgresListener;
 #include "qgsdatasourceuri.h"
 
 /**
-  \class QgsPostgresProvider
-  \brief Data provider for PostgreSQL/PostGIS layers.
-
-  This provider implements the
-  interface defined in the QgsDataProvider class to provide access to spatial
-  data residing in a PostgreSQL/PostGIS enabled database.
+ * \class QgsPostgresProvider
+ * \brief Data provider for PostgreSQL/PostGIS layers.
+ *
+ * This provider implements the
+ * interface defined in the QgsDataProvider class to provide access to spatial
+ * data residing in a PostgreSQL/PostGIS enabled database.
   */
-class QgsPostgresProvider : public QgsVectorDataProvider
+class QgsPostgresProvider final: public QgsVectorDataProvider
 {
     Q_OBJECT
 
@@ -93,8 +93,10 @@ class QgsPostgresProvider : public QgsVectorDataProvider
      * \param uri String containing the required parameters to connect to the database
      * and query the table.
      * \param options generic data provider options
+     * \param flags generic data provider flags
      */
-    explicit QgsPostgresProvider( QString const &uri, const QgsDataProvider::ProviderOptions &providerOptions );
+    explicit QgsPostgresProvider( QString const &uri, const QgsDataProvider::ProviderOptions &providerOptions,
+                                  QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
 
     ~QgsPostgresProvider() override;
@@ -172,7 +174,7 @@ class QgsPostgresProvider : public QgsVectorDataProvider
     QString defaultValueClause( int fieldId ) const override;
     QVariant defaultValue( int fieldId ) const override;
     bool skipConstraintCheck( int fieldIndex, QgsFieldConstraints::Constraint constraint, const QVariant &value = QVariant() ) const override;
-    bool addFeatures( QgsFeatureList &flist, QgsFeatureSink::Flags flags = nullptr ) override;
+    bool addFeatures( QgsFeatureList &flist, QgsFeatureSink::Flags flags = QgsFeatureSink::Flags() ) override;
     bool deleteFeatures( const QgsFeatureIds &id ) override;
     bool truncate() override;
     bool addAttributes( const QList<QgsField> &attributes ) override;
@@ -192,6 +194,7 @@ class QgsPostgresProvider : public QgsVectorDataProvider
     bool setSubsetString( const QString &theSQL, bool updateFeatureCount = true ) override;
     bool supportsSubsetString() const override { return true; }
     QgsVectorDataProvider::Capabilities capabilities() const override;
+    SpatialIndexPresence hasSpatialIndex() const override;
 
     /**
      * The Postgres provider does its own transforms so we return
@@ -206,6 +209,7 @@ class QgsPostgresProvider : public QgsVectorDataProvider
     QString name() const override;
     QString description() const override;
     QgsTransaction *transaction() const override;
+    static QString providerKey();
 
     /**
      * Convert the postgres string representation into the given QVariant type.
@@ -294,9 +298,10 @@ class QgsPostgresProvider : public QgsVectorDataProvider
 
     /**
      * Parses the enum_range of an attribute and inserts the possible values into a stringlist
-    \param enumValues the stringlist where the values are appended
-    \param attributeName the name of the enum attribute
-    \returns true in case of success and fals in case of error (e.g. if the type is not an enum type)*/
+     * \param enumValues the stringlist where the values are appended
+     * \param attributeName the name of the enum attribute
+     * \returns true in case of success and fals in case of error (e.g. if the type is not an enum type)
+    */
     bool parseEnumRange( QStringList &enumValues, const QString &attributeName ) const;
 
     /**
@@ -323,6 +328,14 @@ class QgsPostgresProvider : public QgsVectorDataProvider
      * Search all the layers using the given table.
      */
     static QList<QgsVectorLayer *> searchLayers( const QList<QgsVectorLayer *> &layers, const QString &connectionInfo, const QString &schema, const QString &tableName );
+
+    /**
+     * Effect a reload including resetting the feature count
+     * and setting the layer extent to minimal
+     *
+     * \since QGIS 3.12
+    */
+    void reloadProviderData() override;
 
     //! Old-style mapping of index to name for QgsPalLabeling fix
     QgsAttrPalIndexNameHash mAttrPalIndexName;
@@ -434,7 +447,7 @@ class QgsPostgresProvider : public QgsVectorDataProvider
     // A function that determines if the given columns contain unique entries
     bool uniqueData( const QString &quotedColNames );
 
-    QgsVectorDataProvider::Capabilities mEnabledCapabilities = nullptr;
+    QgsVectorDataProvider::Capabilities mEnabledCapabilities = QgsVectorDataProvider::Capabilities();
 
     void appendGeomParam( const QgsGeometry &geom, QStringList &param ) const;
     void appendPkParams( QgsFeatureId fid, QStringList &param ) const;
@@ -461,6 +474,10 @@ class QgsPostgresProvider : public QgsVectorDataProvider
     void setTransaction( QgsTransaction *transaction ) override;
 
     QHash<int, QString> mDefaultValues;
+
+    // for handling generated columns, available in PostgreSQL 12+
+    // See https://www.postgresql.org/docs/12/ddl-generated-columns.html
+    QHash<int, QString> mGeneratedValues;
 
     bool mCheckPrimaryKeyUnicity = true;
 
@@ -493,7 +510,7 @@ class QgsPostgresUtils
 
     static QString andWhereClauses( const QString &c1, const QString &c2 );
 
-    static const qint64 INT32PK_OFFSET = 4294967296;
+    static const qint64 INT32PK_OFFSET = 4294967296; // 2^32
 
     // We shift negative 32bit integers to above the max 32bit
     // positive integer to support the whole range of int32 values
@@ -507,12 +524,19 @@ class QgsPostgresUtils
     {
       return x <= ( ( INT32PK_OFFSET ) / 2.0 ) ? x : -( INT32PK_OFFSET - x );
     }
+
+    //! Replaces invalid XML chars with UTF-8[<char_code>]
+    static void replaceInvalidXmlChars( QString &xml );
+
+    //! Replaces UTF-8[<char_code>] with the actual unicode char
+    static void restoreInvalidXmlChars( QString &xml );
 };
 
 /**
  * Data shared between provider class and its feature sources. Ideally there should
  *  be as few members as possible because there could be simultaneous reads/writes
- *  from different threads and therefore locking has to be involved. */
+ *  from different threads and therefore locking has to be involved.
+*/
 class QgsPostgresSharedData
 {
   public:
@@ -546,11 +570,11 @@ class QgsPostgresSharedData
     QMap<int, bool> mFieldSupportsEnumValues;        // map field index to bool flag supports enum values
 };
 
-class QgsPostgresProviderMetadata: public QgsProviderMetadata
+class QgsPostgresProviderMetadata final: public QgsProviderMetadata
 {
   public:
     QgsPostgresProviderMetadata();
-    QgsDataProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options ) override;
+    QgsDataProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options, QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() ) override;
     QList< QgsDataItemProvider * > dataItemProviders() const override;
     QgsVectorLayerExporter::ExportError createEmptyLayer( const QString &uri, const QgsFields &fields, QgsWkbTypes::Type wkbType,
         const QgsCoordinateReferenceSystem &srs,
@@ -572,7 +596,8 @@ class QgsPostgresProviderMetadata: public QgsProviderMetadata
     void saveConnection( const QgsAbstractProviderConnection *createConnection, const QString &name ) override;
     void initProvider() override;
     void cleanupProvider() override;
-
+    QVariantMap decodeUri( const QString &uri ) override;
+    QString encodeUri( const QVariantMap &parts ) override;
 };
 
 // clazy:excludeall=qstring-allocations

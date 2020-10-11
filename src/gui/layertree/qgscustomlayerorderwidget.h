@@ -30,7 +30,7 @@ class QCheckBox;
 class QListView;
 
 /**
-  \ingroup gui
+ * \ingroup gui
  * The QgsCustomLayerOrderWidget class provides a list box where the user can define
  * custom order for drawing of layers. It also features a checkbox for enabling
  * or disabling the custom order. Any changes made by the user are automatically
@@ -53,7 +53,7 @@ class GUI_EXPORT QgsCustomLayerOrderWidget : public QWidget
   private slots:
     void bridgeHasCustomLayerOrderChanged( bool state );
     void bridgeCustomLayerOrderChanged();
-    //! Slot triggered when the ivsibility of a node changes
+    //! Slot triggered when the visibility of a node changes
     void nodeVisibilityChanged( QgsLayerTreeNode *node );
 
     void modelUpdated();

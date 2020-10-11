@@ -40,6 +40,7 @@ class TestQgsGpsInformationWidget : public QObject
     void testStorePreferredFields();
     void testTimestamp();
     void testTimestampWrite();
+    void testMultiPartLayers();
 
   private:
     std::unique_ptr<QgsGpsInformationWidget> prepareWidget();
@@ -177,12 +178,12 @@ void TestQgsGpsInformationWidget::testStorePreferredFields()
   std::unique_ptr<QgsGpsInformationWidget> widget = prepareWidget();
   QgsMapCanvas *canvas = mQgisApp->mapCanvas();
   canvas->setCurrentLayer( tempLayerDateTime );
-  int fieldIdx = tempLayerDateTime->fields().indexOf( QStringLiteral( "datetimef" ) );
+  int fieldIdx = tempLayerDateTime->fields().indexOf( QLatin1String( "datetimef" ) );
   QVERIFY( fieldIdx != -1 );
   widget->mCboTimestampField->setCurrentIndex( widget->mCboTimestampField->findText( QStringLiteral( "datetimef" ) ) );
 
   canvas->setCurrentLayer( tempLayerString );
-  fieldIdx = tempLayerString->fields().indexOf( QStringLiteral( "stringf" ) );
+  fieldIdx = tempLayerString->fields().indexOf( QLatin1String( "stringf" ) );
   QVERIFY( fieldIdx != -1 );
   widget->mCboTimestampField->setCurrentIndex( widget->mCboTimestampField->findText( QStringLiteral( "stringf" ) ) );
 
@@ -207,7 +208,7 @@ void TestQgsGpsInformationWidget::testTimestamp()
   // Test datetime layer
   canvas->setCurrentLayer( tempLayerDateTime );
 
-  int fieldIdx { tempLayerDateTime->fields().indexOf( QStringLiteral( "datetimef" ) ) };
+  int fieldIdx { tempLayerDateTime->fields().indexOf( QLatin1String( "datetimef" ) ) };
   widget->mCboTimestampField->setCurrentIndex( widget->mCboTimestampField->findText( QStringLiteral( "datetimef" ) ) );
   QVERIFY( fieldIdx != -1 );
   // UTC
@@ -229,7 +230,7 @@ void TestQgsGpsInformationWidget::testTimestamp()
   ///////////////////////////////////////////
   // Test string
   canvas->setCurrentLayer( tempLayerString );
-  fieldIdx = tempLayerString->fields().indexOf( QStringLiteral( "stringf" ) );
+  fieldIdx = tempLayerString->fields().indexOf( QLatin1String( "stringf" ) );
   widget->mCboTimestampField->setCurrentIndex( widget->mCboTimestampField->findText( QStringLiteral( "stringf" ) ) );
 
   // UTC
@@ -269,14 +270,14 @@ void TestQgsGpsInformationWidget::testTimestampWrite()
   QCOMPARE( _testWrite( tempLayerString, widget.get(), QStringLiteral( "stringf" ),  Qt::TimeSpec::TimeZone ).toString( Qt::DateFormat::ISODate ),  tzTime.toString( Qt::DateFormat::ISODate ) );
 
   // Test write on line string field
-  widget->mCaptureList.push_back( QgsPointXY( 1, 2 ) );
-  widget->mCaptureList.push_back( QgsPointXY( 3, 4 ) );
+  widget->mCaptureList.push_back( QgsPoint( 1, 2 ) );
+  widget->mCaptureList.push_back( QgsPoint( 3, 4 ) );
   QCOMPARE( _testWrite( tempLayerLineString, widget.get(), QStringLiteral( "stringf" ),  Qt::TimeSpec::UTC ).toString( Qt::DateFormat::ISODate ), dateTime.toString( Qt::DateFormat::ISODate ) );
-  widget->mCaptureList.push_back( QgsPointXY( 1, 2 ) );
-  widget->mCaptureList.push_back( QgsPointXY( 3, 4 ) );
+  widget->mCaptureList.push_back( QgsPoint( 1, 2 ) );
+  widget->mCaptureList.push_back( QgsPoint( 3, 4 ) );
   QCOMPARE( _testWrite( tempLayerLineString, widget.get(), QStringLiteral( "stringf" ),  Qt::TimeSpec::LocalTime ).toString( Qt::DateFormat::ISODate ), localTime.toString( Qt::DateFormat::ISODate ) );
-  widget->mCaptureList.push_back( QgsPointXY( 1, 2 ) );
-  widget->mCaptureList.push_back( QgsPointXY( 3, 4 ) );
+  widget->mCaptureList.push_back( QgsPoint( 1, 2 ) );
+  widget->mCaptureList.push_back( QgsPoint( 3, 4 ) );
   QCOMPARE( _testWrite( tempLayerLineString, widget.get(), QStringLiteral( "stringf" ),  Qt::TimeSpec::TimeZone ).toString( Qt::DateFormat::ISODate ),  tzTime.toString( Qt::DateFormat::ISODate ) );
 
   // Write on GPKG
@@ -294,6 +295,62 @@ void TestQgsGpsInformationWidget::testTimestampWrite()
                         Qt::TimeSpec::TimeZone, true ).toString( Qt::DateFormat::ISODate ),  tzTime.toString( Qt::DateFormat::ISODate ) );
 
 
+}
+
+void TestQgsGpsInformationWidget::testMultiPartLayers()
+{
+  std::unique_ptr< QgsVectorLayer >multiLineString = qgis::make_unique< QgsVectorLayer >( QStringLiteral( "MultiLinestring?crs=epsg:4326&field=intf:int&field=stringf:string" ),
+      QStringLiteral( "vl4" ),
+      QStringLiteral( "memory" ) );
+
+  QgsMapCanvas *canvas = mQgisApp->mapCanvas();
+  std::unique_ptr<QgsGpsInformationWidget> widget = qgis::make_unique<QgsGpsInformationWidget>( canvas );
+  widget->mMapCanvas->setCurrentLayer( multiLineString.get() );
+  multiLineString->startEditing();
+
+  // not possible, no points
+  widget->mBtnCloseFeature_clicked();
+  QCOMPARE( multiLineString->featureCount(), 0L );
+  // need at least 2 points
+  widget->mBtnAddVertex_clicked();
+  widget->mBtnCloseFeature_clicked();
+  QCOMPARE( multiLineString->featureCount(), 0L );
+
+  widget->mBtnAddVertex_clicked();
+  widget->mBtnCloseFeature_clicked();
+  QCOMPARE( multiLineString->featureCount(), 1L );
+  QgsFeature f;
+  QVERIFY( multiLineString->getFeatures().nextFeature( f ) );
+  QCOMPARE( f.geometry().wkbType(), QgsWkbTypes::MultiLineString );
+  multiLineString->rollBack();
+
+  // multipolygon
+  std::unique_ptr< QgsVectorLayer >multiPolygon = qgis::make_unique< QgsVectorLayer >( QStringLiteral( "MultiPolygon?crs=epsg:4326&field=intf:int&field=stringf:string" ),
+      QStringLiteral( "vl4" ),
+      QStringLiteral( "memory" ) );
+
+  widget = qgis::make_unique<QgsGpsInformationWidget>( canvas );
+  widget->mMapCanvas->setCurrentLayer( multiPolygon.get() );
+  multiPolygon->startEditing();
+
+  // not possible, no points
+  widget->mBtnCloseFeature_clicked();
+  QCOMPARE( multiPolygon->featureCount(), 0L );
+
+  // need at least 3 points
+  widget->mBtnAddVertex_clicked();
+  widget->mBtnCloseFeature_clicked();
+  QCOMPARE( multiPolygon->featureCount(), 0L );
+  widget->mBtnAddVertex_clicked();
+  widget->mBtnCloseFeature_clicked();
+  QCOMPARE( multiPolygon->featureCount(), 0L );
+
+  widget->mBtnAddVertex_clicked();
+  widget->mBtnCloseFeature_clicked();
+  QCOMPARE( multiPolygon->featureCount(), 1L );
+  QVERIFY( multiPolygon->getFeatures().nextFeature( f ) );
+  QCOMPARE( f.geometry().wkbType(), QgsWkbTypes::MultiPolygon );
+  multiPolygon->rollBack();
 }
 
 

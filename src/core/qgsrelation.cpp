@@ -27,20 +27,28 @@ QgsRelation::QgsRelation()
 {
 }
 
+QgsRelation::QgsRelation( const QgsRelationContext &context )
+  : d( new QgsRelationPrivate() )
+  , mContext( context )
+{
+}
+
 QgsRelation::~QgsRelation() = default;
 
 QgsRelation::QgsRelation( const QgsRelation &other )
   : d( other.d )
+  , mContext( other.mContext )
 {
 }
 
 QgsRelation &QgsRelation::operator=( const QgsRelation &other )
 {
   d = other.d;
+  mContext = other.mContext;
   return *this;
 }
 
-QgsRelation QgsRelation::createFromXml( const QDomNode &node, QgsReadWriteContext &context )
+QgsRelation QgsRelation::createFromXml( const QDomNode &node, QgsReadWriteContext &context,  const QgsRelationContext &relationContext )
 {
   QDomElement elem = node.toElement();
 
@@ -49,7 +57,7 @@ QgsRelation QgsRelation::createFromXml( const QDomNode &node, QgsReadWriteContex
     QgsLogger::warning( QApplication::translate( "QgsRelation", "Cannot create relation. Unexpected tag '%1'" ).arg( elem.tagName() ) );
   }
 
-  QgsRelation relation;
+  QgsRelation relation( relationContext );
 
   QString referencingLayerId = elem.attribute( QStringLiteral( "referencingLayer" ) );
   QString referencedLayerId = elem.attribute( QStringLiteral( "referencedLayer" ) );
@@ -57,7 +65,7 @@ QgsRelation QgsRelation::createFromXml( const QDomNode &node, QgsReadWriteContex
   QString name = context.projectTranslator()->translate( QStringLiteral( "project:relations" ), elem.attribute( QStringLiteral( "name" ) ) );
   QString strength = elem.attribute( QStringLiteral( "strength" ) );
 
-  const QMap<QString, QgsMapLayer *> &mapLayers = QgsProject::instance()->mapLayers();
+  QMap<QString, QgsMapLayer *> mapLayers = relationContext.project()->mapLayers();
 
   QgsMapLayer *referencingLayer = mapLayers[referencingLayerId];
   QgsMapLayer *referencedLayer = mapLayers[referencedLayerId];
@@ -86,14 +94,7 @@ QgsRelation QgsRelation::createFromXml( const QDomNode &node, QgsReadWriteContex
   relation.d->mReferencedLayer = qobject_cast<QgsVectorLayer *>( referencedLayer );
   relation.d->mRelationId = id;
   relation.d->mRelationName = name;
-  if ( strength == QLatin1String( "Composition" ) )
-  {
-    relation.d->mRelationStrength = RelationStrength::Composition;
-  }
-  else
-  {
-    relation.d->mRelationStrength = RelationStrength::Association;
-  }
+  relation.d->mRelationStrength = qgsEnumKeyToValue<QgsRelation::RelationStrength>( strength, RelationStrength::Association );
 
   QDomNodeList references = elem.elementsByTagName( QStringLiteral( "fieldRef" ) );
   for ( int i = 0; i < references.size(); ++i )
@@ -118,14 +119,7 @@ void QgsRelation::writeXml( QDomNode &node, QDomDocument &doc ) const
   elem.setAttribute( QStringLiteral( "name" ), d->mRelationName );
   elem.setAttribute( QStringLiteral( "referencingLayer" ), d->mReferencingLayerId );
   elem.setAttribute( QStringLiteral( "referencedLayer" ), d->mReferencedLayerId );
-  if ( d->mRelationStrength == RelationStrength::Composition )
-  {
-    elem.setAttribute( QStringLiteral( "strength" ), QStringLiteral( "Composition" ) );
-  }
-  else
-  {
-    elem.setAttribute( QStringLiteral( "strength" ), QStringLiteral( "Association" ) );
-  }
+  elem.setAttribute( QStringLiteral( "strength" ), qgsEnumValueToKey<RelationStrength>( d->mRelationStrength ) );
 
   for ( const FieldPair &pair : qgis::as_const( d->mFieldPairs ) )
   {
@@ -197,7 +191,7 @@ QgsFeatureIterator QgsRelation::getRelatedFeatures( const QgsFeature &feature ) 
 QgsFeatureRequest QgsRelation::getRelatedFeaturesRequest( const QgsFeature &feature ) const
 {
   QString filter = getRelatedFeaturesFilter( feature );
-  QgsDebugMsg( QStringLiteral( "Filter conditions: '%1'" ).arg( filter ) );
+  QgsDebugMsgLevel( QStringLiteral( "Filter conditions: '%1'" ).arg( filter ), 2 );
 
   QgsFeatureRequest myRequest;
   myRequest.setFilterExpression( filter );
@@ -214,7 +208,7 @@ QString QgsRelation::getRelatedFeaturesFilter( const QgsFeature &feature ) const
     conditions << QgsExpression::createFieldEqualityExpression( pair.referencingField(), val );
   }
 
-  return conditions.join( QStringLiteral( " AND " ) );
+  return conditions.join( QLatin1String( " AND " ) );
 }
 
 QgsFeatureRequest QgsRelation::getReferencedFeatureRequest( const QgsAttributes &attributes ) const
@@ -229,9 +223,9 @@ QgsFeatureRequest QgsRelation::getReferencedFeatureRequest( const QgsAttributes 
 
   QgsFeatureRequest myRequest;
 
-  QgsDebugMsg( QStringLiteral( "Filter conditions: '%1'" ).arg( conditions.join( " AND " ) ) );
+  QgsDebugMsgLevel( QStringLiteral( "Filter conditions: '%1'" ).arg( conditions.join( " AND " ) ), 2 );
 
-  myRequest.setFilterExpression( conditions.join( QStringLiteral( " AND " ) ) );
+  myRequest.setFilterExpression( conditions.join( QLatin1String( " AND " ) ) );
 
   return myRequest;
 }
@@ -355,7 +349,7 @@ QString QgsRelation::resolveReferencingField( const QString &referencedField ) c
 
 void QgsRelation::updateRelationStatus()
 {
-  const QMap<QString, QgsMapLayer *> &mapLayers = QgsProject::instance()->mapLayers();
+  const QMap<QString, QgsMapLayer *> &mapLayers = mContext.project()->mapLayers();
 
   d->mReferencingLayer = qobject_cast<QgsVectorLayer *>( mapLayers[d->mReferencingLayerId] );
   d->mReferencedLayer = qobject_cast<QgsVectorLayer *>( mapLayers[d->mReferencedLayerId] );

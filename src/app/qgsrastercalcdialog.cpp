@@ -69,6 +69,9 @@ QgsRasterCalcDialog::QgsRasterCalcDialog( QgsRasterLayer *rasterLayer, QWidget *
   connect( mLesserEqualButton, &QPushButton::clicked, this, &QgsRasterCalcDialog::mLesserEqualButton_clicked );
   connect( mGreaterEqualButton, &QPushButton::clicked, this, &QgsRasterCalcDialog::mGreaterEqualButton_clicked );
   connect( mAndButton, &QPushButton::clicked, this, &QgsRasterCalcDialog::mAndButton_clicked );
+  connect( mAbsButton, &QPushButton::clicked, this, &QgsRasterCalcDialog::mAbsButton_clicked );
+  connect( mMinButton, &QPushButton::clicked, this, &QgsRasterCalcDialog::mMinButton_clicked );
+  connect( mMaxButton, &QPushButton::clicked, this, &QgsRasterCalcDialog::mMaxButton_clicked );
   connect( mOrButton, &QPushButton::clicked, this, &QgsRasterCalcDialog::mOrButton_clicked );
   connect( mButtonBox, &QDialogButtonBox::helpRequested, this, &QgsRasterCalcDialog::showHelp );
 
@@ -77,6 +80,8 @@ QgsRasterCalcDialog::QgsRasterCalcDialog( QgsRasterLayer *rasterLayer, QWidget *
     setExtentSize( rasterLayer->width(), rasterLayer->height(), rasterLayer->extent() );
     mCrsSelector->setCrs( rasterLayer->crs() );
   }
+
+  mButtonBox->button( QDialogButtonBox::Ok )->setEnabled( false );
 
   //add supported output formats
   insertAvailableOutputFormats();
@@ -472,6 +477,21 @@ void QgsRasterCalcDialog::mAndButton_clicked()
 void QgsRasterCalcDialog::mOrButton_clicked()
 {
   mExpressionTextEdit->insertPlainText( QStringLiteral( " OR " ) );
+}
+
+void QgsRasterCalcDialog::mAbsButton_clicked()
+{
+  mExpressionTextEdit->insertPlainText( QStringLiteral( " ABS ( " ) );
+}
+
+void QgsRasterCalcDialog::mMinButton_clicked()
+{
+  mExpressionTextEdit->insertPlainText( QStringLiteral( " MIN ( " ) );
+}
+
+void QgsRasterCalcDialog::mMaxButton_clicked()
+{
+  mExpressionTextEdit->insertPlainText( QStringLiteral( " MAX ( " ) );
 }
 
 QString QgsRasterCalcDialog::quoteBandEntry( const QString &layerName )

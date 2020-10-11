@@ -35,7 +35,7 @@ class APP_EXPORT QgsRasterCalcDialog: public QDialog, private Ui::QgsRasterCalcD
      * \param parent widget
      * \param f window flags
      */
-    QgsRasterCalcDialog( QgsRasterLayer *rasterLayer = nullptr, QWidget *parent = nullptr, Qt::WindowFlags f = nullptr );
+    QgsRasterCalcDialog( QgsRasterLayer *rasterLayer = nullptr, QWidget *parent = nullptr, Qt::WindowFlags f = Qt::WindowFlags() );
 
     QString formulaString() const;
     QString outputFile() const;
@@ -91,6 +91,9 @@ class APP_EXPORT QgsRasterCalcDialog: public QDialog, private Ui::QgsRasterCalcD
     void mGreaterEqualButton_clicked();
     void mAndButton_clicked();
     void mOrButton_clicked();
+    void mAbsButton_clicked();
+    void mMinButton_clicked();
+    void mMaxButton_clicked();
 
   private:
     //! Sets the extent and size of the output

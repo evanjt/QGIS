@@ -132,7 +132,7 @@ double-click, and to prevent the default double-click behavior for items.
 
     virtual bool acceptDrop( QgsDataItem *item, QgsDataItemGuiContext context );
 %Docstring
-Providers should return ``True`` if the drops are allowed (handleDrop() should be
+Providers should return ``True`` if the drops are allowed (:py:func:`~QgsDataItemGuiProvider.handleDrop` should be
 implemented in that case as well).
 
 .. versionadded:: 3.10
@@ -145,6 +145,26 @@ if the drop was handled and do not want other providers to handle the
 drop, and to prevent the default drop behavior for items.
 
 .. versionadded:: 3.10
+%End
+
+    virtual QWidget *createParamWidget( QgsDataItem *item, QgsDataItemGuiContext context ) /Factory/;
+%Docstring
+Creates source widget from data item for :py:class:`QgsBrowserPropertiesWidget`
+By default it returns None.
+Caller takes responsibility of deleting created.
+
+The function is replacement of :py:func:`QgsDataItem.paramWidget()`
+
+.. versionadded:: 3.10
+%End
+
+    static void notify( const QString &title, const QString &message, QgsDataItemGuiContext context, Qgis::MessageLevel level = Qgis::Info );
+%Docstring
+Notify the user showing a ``message`` with ``title`` and ``level``
+If the context has a message bar the message will be shown in the message bar
+else a message dialog will be used.
+
+.. versionadded:: 3.16
 %End
 };
 

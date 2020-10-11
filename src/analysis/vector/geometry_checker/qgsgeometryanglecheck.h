@@ -25,6 +25,7 @@
  */
 class ANALYSIS_EXPORT QgsGeometryAngleCheck : public QgsGeometryCheck
 {
+    Q_DECLARE_TR_FUNCTIONS( QgsGeometryAngleCheck )
   public:
     enum ResolutionMethod
     {
@@ -41,7 +42,7 @@ class ANALYSIS_EXPORT QgsGeometryAngleCheck : public QgsGeometryCheck
     void fixError( const QMap<QString, QgsFeaturePool *> &featurePools, QgsGeometryCheckError *error, int method, const QMap<QString, int> &mergeAttributeIndices, Changes &changes ) const override;
 
     QList<QgsWkbTypes::GeometryType> compatibleGeometryTypes() const override;
-    QStringList resolutionMethods() const override;
+    Q_DECL_DEPRECATED QStringList resolutionMethods() const override;
     QString id() const override;
     QString description() const override;
     QgsGeometryCheck::CheckType checkType() const override;

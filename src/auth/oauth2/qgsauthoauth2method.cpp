@@ -36,6 +36,7 @@
 #include <QPointer>
 #include <QString>
 #include <QMutexLocker>
+#include <QUrlQuery>
 
 
 static const QString AUTH_METHOD_KEY = QStringLiteral( "OAuth2" );
@@ -160,7 +161,7 @@ bool QgsAuthOAuth2Method::updateNetworkRequest( QNetworkRequest &request, const 
         QEventLoop rloop( nullptr );
         connect( o2, &QgsO2::refreshFinished, &rloop, &QEventLoop::quit );
 
-        // add singlshot timer to quit refresh after an alloted timeout
+        // add single shot timer to quit refresh after an allotted timeout
         // this should keep the local event loop from blocking forever
         QTimer r_timer( nullptr );
         int r_reqtimeout = o2->oauth2config()->requestTimeout() * 1000;
@@ -214,7 +215,7 @@ bool QgsAuthOAuth2Method::updateNetworkRequest( QNetworkRequest &request, const 
     connect( o2, &QgsO2::linkingFailed, &loop, &QEventLoop::quit );
     connect( o2, &QgsO2::linkingSucceeded, &loop, &QEventLoop::quit );
 
-    // add singlshot timer to quit linking after an alloted timeout
+    // add single shot timer to quit linking after an allotted timeout
     // this should keep the local event loop from blocking forever
     QTimer timer( nullptr );
     timer.setInterval( reqtimeout * 5 );
@@ -266,7 +267,7 @@ bool QgsAuthOAuth2Method::updateNetworkRequest( QNetworkRequest &request, const 
   switch ( accessmethod )
   {
     case QgsAuthOAuth2Config::Header:
-      request.setRawHeader( O2_HTTP_AUTHORIZATION_HEADER, QStringLiteral( "Bearer %1" ).arg( o2->token() ).toAscii() );
+      request.setRawHeader( O2_HTTP_AUTHORIZATION_HEADER, QStringLiteral( "Bearer %1" ).arg( o2->token() ).toLatin1() );
 #ifdef QGISDEBUG
       msg = QStringLiteral( "Updated request HEADER with access token for authcfg: %1" ).arg( authcfg );
       QgsDebugMsgLevel( msg, 2 );
@@ -407,7 +408,7 @@ void QgsAuthOAuth2Method::onCloseBrowser()
     const QList<QWidget *> widgets = QgsApplication::topLevelWidgets();
     for ( QWidget *topwdgt : widgets )
     {
-      if ( topwdgt->objectName() == QStringLiteral( "MainWindow" ) )
+      if ( topwdgt->objectName() == QLatin1String( "MainWindow" ) )
       {
         topwdgt->raise();
         topwdgt->activateWindow();

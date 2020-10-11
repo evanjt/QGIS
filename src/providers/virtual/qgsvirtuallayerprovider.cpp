@@ -54,8 +54,10 @@ static QString quotedColumn( QString name )
 #define PROVIDER_ERROR( msg ) do { mError = QgsError( msg, VIRTUAL_LAYER_KEY ); QgsDebugMsg( msg ); } while(0)
 
 
-QgsVirtualLayerProvider::QgsVirtualLayerProvider( QString const &uri, const QgsDataProvider::ProviderOptions &options )
-  : QgsVectorDataProvider( uri, options )
+QgsVirtualLayerProvider::QgsVirtualLayerProvider( QString const &uri,
+    const QgsDataProvider::ProviderOptions &options,
+    QgsDataProvider::ReadFlags flags )
+  : QgsVectorDataProvider( uri, options, flags )
 {
   mError.clear();
 
@@ -76,6 +78,8 @@ QgsVirtualLayerProvider::QgsVirtualLayerProvider( QString const &uri, const QgsD
   {
     mDefinition = QgsVirtualLayerDefinition::fromUrl( url );
 
+    mSubset = mDefinition.subsetString();
+
     if ( !mDefinition.isLazy() )
     {
       reloadData();
@@ -90,11 +94,13 @@ QgsVirtualLayerProvider::QgsVirtualLayerProvider( QString const &uri, const QgsD
 
   if ( mDefinition.geometrySrid() != -1 )
   {
+    Q_NOWARN_DEPRECATED_PUSH
     mCrs = QgsCoordinateReferenceSystem( mDefinition.geometrySrid() );
+    Q_NOWARN_DEPRECATED_POP
   }
 }
 
-void QgsVirtualLayerProvider::reloadData()
+void QgsVirtualLayerProvider::reloadProviderData()
 {
   if ( mDefinition.sourceLayers().empty() && !mDefinition.filePath().isEmpty() && mDefinition.query().isEmpty() )
   {
@@ -202,6 +208,8 @@ bool QgsVirtualLayerProvider::openIt()
   {
     mTableName = VIRTUAL_LAYER_QUERY_VIEW;
   }
+
+  mSubset = mDefinition.subsetString();
 
   return true;
 }
@@ -521,6 +529,10 @@ bool QgsVirtualLayerProvider::setSubsetString( const QString &subset, bool updat
   if ( updateFeatureCount )
     updateStatistics();
 
+  mDefinition.setSubsetString( subset );
+
+  setDataSourceUri( mDefinition.toString() );
+
   emit dataChanged();
 
   return true;
@@ -558,20 +570,30 @@ void QgsVirtualLayerProvider::updateStatistics() const
                 .arg( hasGeometry ? QStringLiteral( ",Min(MbrMinX(%1)),Min(MbrMinY(%1)),Max(MbrMaxX(%1)),Max(MbrMaxY(%1))" ).arg( quotedColumn( mDefinition.geometryField() ) ) : QString(),
                       mTableName,
                       subset );
-  Sqlite::Query q( mSqlite.get(), sql );
-  if ( q.step() == SQLITE_ROW )
+
+  try
   {
-    mFeatureCount = q.columnInt64( 0 );
-    if ( hasGeometry )
+    Sqlite::Query q( mSqlite.get(), sql );
+    if ( q.step() == SQLITE_ROW )
     {
-      double x1, y1, x2, y2;
-      x1 = q.columnDouble( 1 );
-      y1 = q.columnDouble( 2 );
-      x2 = q.columnDouble( 3 );
-      y2 = q.columnDouble( 4 );
-      mExtent = QgsRectangle( x1, y1, x2, y2 );
+      mFeatureCount = q.columnInt64( 0 );
+      if ( hasGeometry )
+      {
+        double x1, y1, x2, y2;
+        x1 = q.columnDouble( 1 );
+        y1 = q.columnDouble( 2 );
+        x2 = q.columnDouble( 3 );
+        y2 = q.columnDouble( 4 );
+        mExtent = QgsRectangle( x1, y1, x2, y2 );
+      }
+      mCachedStatistics = true;
     }
-    mCachedStatistics = true;
+  }
+  catch ( std::runtime_error &e )
+  {
+    pushError( tr( "Error while executing feature count request : %1" ).arg( e.what() ) );
+    mFeatureCount = 0;
+    return;
   }
 }
 
@@ -644,9 +666,10 @@ QSet<QgsMapLayerDependency> QgsVirtualLayerProvider::dependencies() const
 
 QgsVirtualLayerProvider *QgsVirtualLayerProviderMetadata::createProvider(
   const QString &uri,
-  const QgsDataProvider::ProviderOptions &options )
+  const QgsDataProvider::ProviderOptions &options,
+  QgsDataProvider::ReadFlags flags )
 {
-  return new QgsVirtualLayerProvider( uri, options );
+  return new QgsVirtualLayerProvider( uri, options, flags );
 }
 
 
@@ -699,4 +722,3 @@ QGISEXTERN QgsProviderGuiMetadata *providerGuiMetadataFactory()
   return new QgsVirtualLayerProviderGuiMetadata();
 }
 #endif
-

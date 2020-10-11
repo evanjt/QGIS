@@ -113,25 +113,25 @@ QgsGradientColorRampDialog::QgsGradientColorRampDialog( const QgsGradientColorRa
   grid->attach( mPlot );
 
   mLightnessCurve = new QwtPlotCurve();
-  mLightnessCurve->setTitle( QStringLiteral( "Lightness" ) );
+  mLightnessCurve->setTitle( tr( "Lightness" ) );
   mLightnessCurve->setPen( QPen( QColor( 70, 150, 255 ), 0.0 ) ),
                   mLightnessCurve->setRenderHint( QwtPlotItem::RenderAntialiased, true );
   mLightnessCurve->attach( mPlot );
 
   mHueCurve = new QwtPlotCurve();
-  mHueCurve->setTitle( QStringLiteral( "Hue" ) );
+  mHueCurve->setTitle( tr( "Hue" ) );
   mHueCurve->setPen( QPen( QColor( 255, 215, 70 ), 0.0 ) ),
             mHueCurve->setRenderHint( QwtPlotItem::RenderAntialiased, true );
   mHueCurve->attach( mPlot );
 
   mSaturationCurve = new QwtPlotCurve();
-  mSaturationCurve->setTitle( QStringLiteral( "Saturation" ) );
+  mSaturationCurve->setTitle( tr( "Saturation" ) );
   mSaturationCurve->setPen( QPen( QColor( 255, 70, 150 ), 0.0 ) ),
                    mSaturationCurve->setRenderHint( QwtPlotItem::RenderAntialiased, true );
   mSaturationCurve->attach( mPlot );
 
   mAlphaCurve = new QwtPlotCurve();
-  mAlphaCurve->setTitle( QStringLiteral( "Opacity" ) );
+  mAlphaCurve->setTitle( tr( "Opacity" ) );
   mAlphaCurve->setPen( QPen( QColor( 50, 50, 50 ), 0.0 ) ),
               mAlphaCurve->setRenderHint( QwtPlotItem::RenderAntialiased, true );
   mAlphaCurve->attach( mPlot );
@@ -423,7 +423,7 @@ void QgsGradientColorRampDialog::plotMousePress( QPointF point )
       currentDist = std::pow( point.x() - currentOff, 2.0 ) + std::pow( point.y() - currentCol.alphaF(), 2.0 );
       if ( currentDist < minDist )
       {
-        minDist = currentDist;;
+        minDist = currentDist;
         mCurrentPlotColorComponent = 3;
         mCurrentPlotMarkerIndex = i;
       }
@@ -581,7 +581,7 @@ void QgsGradientColorRampDialog::setColor2( const QColor &color )
 
 void QgsGradientColorRampDialog::showHelp()
 {
-  QgsHelp::openHelp( QStringLiteral( "working_with_vector/style_library.html#color-ramp" ) );
+  QgsHelp::openHelp( QStringLiteral( "style_library/style_manager.html#setting-a-color-ramp" ) );
 }
 
 

@@ -21,6 +21,7 @@
 #include "qgis.h"
 #include <QWidget>
 #include <QStandardItemModel>
+#include <QPicture>
 #include "qgspanelwidget.h"
 
 #include "ui_qgseffectstackpropertieswidgetbase.h"
@@ -116,7 +117,7 @@ class GUI_EXPORT QgsEffectStackPropertiesWidget : public QgsPanelWidget, private
     QgsEffectStack *mStack = nullptr;
     QStandardItemModel *mModel = nullptr;
     QWidget *mPresentWidget = nullptr;
-    QPicture *mPreviewPicture = nullptr;
+    QPicture mPreviewPicture;
 
     /**
      * Refreshes the widget to reflect the current state of the stack.
@@ -177,7 +178,7 @@ class GUI_EXPORT QgsEffectStackPropertiesDialog: public QgsDialog
      * \param parent parent widget
      * \param f window flags
      */
-    QgsEffectStackPropertiesDialog( QgsEffectStack *stack, QWidget *parent SIP_TRANSFERTHIS = nullptr, Qt::WindowFlags f = nullptr );
+    QgsEffectStackPropertiesDialog( QgsEffectStack *stack, QWidget *parent SIP_TRANSFERTHIS = nullptr, Qt::WindowFlags f = Qt::WindowFlags() );
 
     /**
      * Returns effect stack attached to the dialog
@@ -194,6 +195,10 @@ class GUI_EXPORT QgsEffectStackPropertiesDialog: public QgsDialog
   protected:
 
     QgsEffectStackPropertiesWidget *mPropertiesWidget = nullptr;
+
+  private slots:
+
+    void showHelp();
 
 };
 
@@ -268,7 +273,7 @@ class GUI_EXPORT QgsEffectStackCompactWidget: public QgsPanelWidget
     QgsEffectStack *mStack = nullptr;
     QCheckBox *mEnabledCheckBox = nullptr;
     QToolButton *mButton = nullptr;
-    QPicture *mPreviewPicture = nullptr;
+    QPicture mPreviewPicture;
 
 };
 

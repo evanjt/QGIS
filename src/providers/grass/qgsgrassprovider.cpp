@@ -20,6 +20,7 @@
 
 #include <QString>
 #include <QDateTime>
+#include <QElapsedTimer>
 
 #include "qgis.h"
 #include "qgsdataprovider.h"
@@ -114,7 +115,7 @@ QgsGrassProvider::QgsGrassProvider( const QString &uri )
     return;
   }
 
-  QTime time;
+  QElapsedTimer time;
   time.start();
 
   mPoints = Vect_new_line_struct();
@@ -758,7 +759,7 @@ int QgsGrassProvider::rewriteLine( int oldLid, int type, struct line_pnts *Point
   {
     newLid = Vect_rewrite_line_function_pointer( map(), oldLid, type, Points, Cats );
 
-    // oldLids are maping to the very first, original version (used by undo)
+    // oldLids are mapping to the very first, original version (used by undo)
     int oldestLid = oldLid;
     if ( mLayer->map()->oldLids().contains( oldLid ) ) // if it was changed already
     {
@@ -953,8 +954,7 @@ QgsAttributeMap *QgsGrassProvider::attributes( int field, int cat )
 
   dbString dbstr;
   db_init_string( &dbstr );
-  QString query;
-  query.sprintf( "select * from %s where %s = %d", fi->table, fi->key, cat );
+  QString query = QStringLiteral( "select * from %1 where %2=%3" ).arg( fi->table, fi->key ).arg( cat );
   db_set_string( &dbstr, query.toUtf8().constData() );
 
   QgsDebugMsg( QString( "SQL: %1" ).arg( db_get_string( &dbstr ) ) );
@@ -1581,7 +1581,7 @@ void QgsGrassProvider::onFeatureDeleted( QgsFeatureId fid )
         QgsDebugMsg( "no more cats on the line -> delete" );
 
         Vect_delete_line_function_pointer( map(), realLine );
-        // oldLids are maping to the very first, original version (used by undo)
+        // oldLids are mapping to the very first, original version (used by undo)
         int oldestLid = oldLid;
         if ( mLayer->map()->oldLids().contains( oldLid ) )
         {
@@ -1707,7 +1707,7 @@ void QgsGrassProvider::onAttributeValueChanged( QgsFeatureId fid, int idx, const
       changedAttributes[fid][idx] = QgsGrassFeatureIterator::nonEditableValue( layerField );
     }
     // update table
-    // TODO: This would be too slow with buld update (field calculator for example), causing update
+    // TODO: This would be too slow with bulk updates (field calculator for example), causing update
     // of the whole table after each change. How to update single row?
     //emit dataChanged();
     return;
@@ -1738,7 +1738,7 @@ void QgsGrassProvider::onAttributeValueChanged( QgsFeatureId fid, int idx, const
 
   QgsDebugMsg( "field.name() = " + field.name() + " keyColumnName() = " + mLayer->keyColumnName() );
   // TODO: Changing existing category is currently disabled (read only widget set on layer)
-  //       bacause it makes it all too complicated
+  //       because it makes it all too complicated
   if ( field.name() == mLayer->keyColumnName() )
   {
     // user changed category -> rewrite line
@@ -2042,7 +2042,9 @@ QgsGrassVectorMapLayer *QgsGrassProvider::openLayer() const
 struct Map_info *QgsGrassProvider::map() const
 {
   Q_ASSERT( mLayer );
+  // cppcheck-suppress assertWithSideEffect
   Q_ASSERT( mLayer->map() );
+  // cppcheck-suppress assertWithSideEffect
   Q_ASSERT( mLayer->map()->map() );
   return mLayer->map()->map();
 }

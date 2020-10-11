@@ -33,8 +33,9 @@ const QString QgsDb2Provider::DB2_PROVIDER_DESCRIPTION = QStringLiteral( "DB2 Sp
 int QgsDb2Provider::sConnectionId = 0;
 QMutex QgsDb2Provider::sMutex{ QMutex::Recursive };
 
-QgsDb2Provider::QgsDb2Provider( const QString &uri, const ProviderOptions &options )
-  : QgsVectorDataProvider( uri, options )
+QgsDb2Provider::QgsDb2Provider( const QString &uri, const ProviderOptions &options,
+                                QgsDataProvider::ReadFlags flags )
+  : QgsVectorDataProvider( uri, options, flags )
   , mEnvironment( ENV_LUW )
 {
   QgsDebugMsg( "uri: " + uri );
@@ -62,13 +63,17 @@ QgsDb2Provider::QgsDb2Provider( const QString &uri, const ProviderOptions &optio
   QgsDebugMsg( "mExtents " + mExtents );
 
   mUseEstimatedMetadata = anUri.useEstimatedMetadata();
+  if ( mReadFlags & QgsDataProvider::FlagTrustDataSource )
+  {
+    mUseEstimatedMetadata = true;
+  }
   QgsDebugMsg( QStringLiteral( "mUseEstimatedMetadata: '%1'" ).arg( mUseEstimatedMetadata ) );
   mSqlWhereClause = anUri.sql();
   QString errMsg;
   mDatabase = getDatabase( uri, errMsg );
   mConnInfo = anUri.connectionInfo();
   QgsCoordinateReferenceSystem layerCrs = crs();
-  QgsDebugMsg( "CRS: " + layerCrs.toWkt() );
+  QgsDebugMsg( "CRS: " + layerCrs.toWkt( QgsCoordinateReferenceSystem::WKT_PREFERRED ) );
 
   if ( !errMsg.isEmpty() )
   {
@@ -548,12 +553,6 @@ QgsCoordinateReferenceSystem QgsDb2Provider::crs() const
 {
   if ( !mCrs.isValid() && mSRId > 0 )
   {
-    mCrs.createFromSrid( mSRId );
-    if ( mCrs.isValid() )
-    {
-      return mCrs;
-    }
-
     // try to load crs from the database tables as a fallback
     QSqlQuery query = QSqlQuery( mDatabase );
     query.setForwardOnly( true );
@@ -612,7 +611,7 @@ void QgsDb2Provider::updateStatistics() const
   QgsDebugMsg( QStringLiteral( "mSRId: %1" ).arg( mSRId ) );
   QgsDb2GeometryColumns gc( mDatabase );
   QString rc = gc.open( mSchemaName, mTableName );  // returns SQLCODE if failure
-  if ( rc.isEmpty() || rc == QStringLiteral( "0" ) )
+  if ( rc.isEmpty() || rc == QLatin1String( "0" ) )
   {
     mEnvironment = gc.db2Environment();
     if ( -1 == mSRId )
@@ -1015,8 +1014,8 @@ bool QgsDb2Provider::addFeatures( QgsFeatureList &flist, Flags flags )
     else
       first = false;
 
-    statement += QStringLiteral( "%1" ).arg( fld.name() );
-    values += QStringLiteral( "?" );
+    statement += fld.name();
+    values += '?';
   }
 
   // append geometry column name
@@ -1028,7 +1027,7 @@ bool QgsDb2Provider::addFeatures( QgsFeatureList &flist, Flags flags )
       values += ',';
     }
 
-    statement += QStringLiteral( "%1" ).arg( mGeometryColName );
+    statement += mGeometryColName;
 
     values += QStringLiteral( "db2gse.%1(CAST (%2 AS BLOB(2M)),%3)" )
               .arg( mGeometryColType,
@@ -1309,7 +1308,7 @@ QgsVectorLayerExporter::ExportError QgsDb2Provider::createEmptyLayer( const QStr
   // srs->posgisSrid() seems to return the authority id which is
   // most often the EPSG id.  Hopefully DB2 has defined an SRS using this
   // value as the srid / srs_id.  If not, we are out of luck.
-  QgsDebugMsg( "srs: " + srs.toWkt() );
+  QgsDebugMsg( "srs: " + srs.toWkt( QgsCoordinateReferenceSystem::WKT_PREFERRED ) );
   long srid = srs.postgisSrid();
   QgsDebugMsg( QStringLiteral( "srid: %1" ).arg( srid ) );
   if ( srid >= 0 )
@@ -1419,7 +1418,7 @@ QgsVectorLayerExporter::ExportError QgsDb2Provider::createEmptyLayer( const QStr
     sql = "DROP TABLE " + fullName;
     if ( !q.exec( sql ) )
     {
-      if ( q.lastError().nativeErrorCode() != QStringLiteral( "-206" ) ) // -206 is "not found" just ignore
+      if ( q.lastError().nativeErrorCode() != QLatin1String( "-206" ) ) // -206 is "not found" just ignore
       {
         QString lastError = q.lastError().text();
         QgsDebugMsg( lastError );
@@ -1524,7 +1523,7 @@ QgsVectorLayerExporter::ExportError QgsDb2Provider::createEmptyLayer( const QStr
 // get the environment
       QgsDb2GeometryColumns gc( db );
       QString rc = gc.open( schemaName, tableName );  // returns SQLCODE if failure
-      if ( rc.isEmpty() || rc == QStringLiteral( "0" ) )
+      if ( rc.isEmpty() || rc == QLatin1String( "0" ) )
       {
         db2Environment = gc.db2Environment();
       }
@@ -1652,22 +1651,22 @@ bool QgsDb2Provider::convertField( QgsField &field )
 
     case QVariant::DateTime:
       fieldType = QStringLiteral( "TIMESTAMP" );
-      fieldPrec = -1;
+      fieldPrec = 0;
       break;
 
     case QVariant::Date:
       fieldType = QStringLiteral( "DATE" );
-      fieldPrec = -1;
+      fieldPrec = 0;
       break;
 
     case QVariant::Time:
       fieldType = QStringLiteral( "TIME" );
-      fieldPrec = -1;
+      fieldPrec = 0;
       break;
 
     case QVariant::String:
       fieldType = QStringLiteral( "VARCHAR" );
-      fieldPrec = -1;
+      fieldPrec = 0;
       break;
 
     case QVariant::Int:
@@ -1681,7 +1680,7 @@ bool QgsDb2Provider::convertField( QgsField &field )
       {
         fieldType = QStringLiteral( "DOUBLE" );
         fieldSize = -1;
-        fieldPrec = -1;
+        fieldPrec = 0;
       }
       else
       {
@@ -1718,9 +1717,9 @@ QgsAttributeList QgsDb2Provider::pkAttributeIndexes() const
   return list;
 }
 
-QgsDb2Provider *QgsDb2ProviderMetadata::createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options )
+QgsDb2Provider *QgsDb2ProviderMetadata::createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options, QgsDataProvider::ReadFlags flags )
 {
-  return new QgsDb2Provider( uri, options );
+  return new QgsDb2Provider( uri, options, flags );
 }
 
 QgsDb2ProviderMetadata::QgsDb2ProviderMetadata()

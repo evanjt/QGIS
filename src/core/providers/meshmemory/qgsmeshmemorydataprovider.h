@@ -30,45 +30,12 @@
 #include "qgsmeshdataprovider.h"
 #include "qgsrectangle.h"
 
-struct CORE_EXPORT QgsMeshMemoryDataset
-{
-  QgsMeshMemoryDataset();
-  QgsMeshDataBlock datasetValues( bool isScalar, int valueIndex, int count ) const;
-  QgsMeshDataBlock areFacesActive( int faceIndex, int count ) const;
-
-  QVector<QgsMeshDatasetValue> values;
-  QVector<int> active;
-  double time = -1;
-  bool valid = false;
-  double minimum = std::numeric_limits<double>::quiet_NaN();
-  double maximum = std::numeric_limits<double>::quiet_NaN();
-};
-
-struct CORE_EXPORT QgsMeshMemoryDatasetGroup
-{
-  QgsMeshMemoryDatasetGroup( const QString &nm );
-  QgsMeshMemoryDatasetGroup();
-  QgsMeshDatasetGroupMetadata groupMetadata() const;
-  int datasetCount() const;
-  void addDataset( std::shared_ptr<QgsMeshMemoryDataset> dataset );
-  void clearDatasets();
-  std::shared_ptr<const QgsMeshMemoryDataset> constDataset( int index ) const;
-
-  QMap<QString, QString> metadata;
-  QVector<std::shared_ptr<QgsMeshMemoryDataset>> datasets;
-  QString name;
-  bool isScalar = true;
-  QgsMeshDatasetGroupMetadata::DataType type = QgsMeshDatasetGroupMetadata::DataOnVertices;
-  double minimum = std::numeric_limits<double>::quiet_NaN();
-  double maximum = std::numeric_limits<double>::quiet_NaN();
-};
-
 /**
  * \ingroup core
  * Provides data stored in-memory for QgsMeshLayer. Useful for plugins or tests.
  * \since QGIS 3.2
  */
-class CORE_EXPORT QgsMeshMemoryDataProvider: public QgsMeshDataProvider
+class CORE_EXPORT QgsMeshMemoryDataProvider final: public QgsMeshDataProvider
 {
     Q_OBJECT
 
@@ -77,11 +44,16 @@ class CORE_EXPORT QgsMeshMemoryDataProvider: public QgsMeshDataProvider
     /**
      * Construct a mesh in-memory data provider from data string
      *
-     * Data string constains simple definition of vertices and faces
+     * Data string contains simple definition of vertices and faces or edges
+     *
      * Each entry is separated by "\n" sign and section deliminer "---"
-     * vertex is x and y coordinate separated by comma
-     * face is list of vertex indexes, numbered from 0
-     * For example:
+     * First section defines vertices (x and y coordinate separated by comma)
+     * Second section defines face list (vertex indexes, numbered from 0. A face has 3 or move vertices)
+     * or defines edge list (vertex indexes, numbered from 0. An edge has 2 vertices)
+     *
+     * It is not possible to define mesh with both faces and edges
+     *
+     * For example (mesh with faces and vertices):
      *
      *  \code
      *    QString uri(
@@ -90,13 +62,29 @@ class CORE_EXPORT QgsMeshMemoryDataProvider: public QgsMeshDataProvider
      *      "3.0, 2.0 \n" \
      *      "2.0, 3.0 \n" \
      *      "1.0, 3.0 \n" \
-     *      "---"
+     *      "--- \n"
      *      "0, 1, 3, 4 \n" \
      *      "1, 2, 3 \n"
      *    );
      * \endcode
+     *
+     *  For example (mesh with edges and vertices):
+     *
+     *  \code
+     *    QString uri(
+     *      "1.0, 2.0 \n" \
+     *      "2.0, 2.0 \n" \
+     *      "3.0, 2.0 \n" \
+     *      "2.0, 3.0 \n" \
+     *      "1.0, 3.0 \n" \
+     *      "---\n"
+     *      "0, 1 \n" \
+     *      "1, 2 \n"
+     *    );
+     * \endcode
      */
-    QgsMeshMemoryDataProvider( const QString &uri, const QgsDataProvider::ProviderOptions &providerOptions );
+    QgsMeshMemoryDataProvider( const QString &uri, const QgsDataProvider::ProviderOptions &providerOptions,
+                               QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
     bool isValid() const override;
     QString name() const override;
@@ -105,15 +93,16 @@ class CORE_EXPORT QgsMeshMemoryDataProvider: public QgsMeshDataProvider
 
     int vertexCount() const override;
     int faceCount() const override;
+    int edgeCount() const override;
     void populateMesh( QgsMesh *mesh ) const override;
     QgsRectangle extent() const override;
 
     /**
      * Adds dataset to a mesh in-memory data provider from data string
      *
-     * Data string constains simple definition of datasets
+     * Data string contains simple definition of datasets
      * Each entry is separated by "\n" sign and section deliminer "---"
-     * First section defines the dataset group: Vertex/Face Vector/Scalar Name
+     * First section defines the dataset group: Vertex/Edge/Face Vector/Scalar Name
      * Second section defines the group metadata: key: value pairs
      * Third section defines the datasets (timesteps). First line is time,
      * other lines are values (one value on line). For vectors separated by comma
@@ -146,39 +135,52 @@ class CORE_EXPORT QgsMeshMemoryDataProvider: public QgsMeshDataProvider
     QgsMeshDatasetMetadata datasetMetadata( QgsMeshDatasetIndex index ) const override;
     QgsMeshDatasetValue datasetValue( QgsMeshDatasetIndex index, int valueIndex ) const override;
     QgsMeshDataBlock datasetValues( QgsMeshDatasetIndex index, int valueIndex, int count ) const override;
+    QgsMesh3dDataBlock dataset3dValues( QgsMeshDatasetIndex index, int faceIndex, int count ) const override;
+
     bool isFaceActive( QgsMeshDatasetIndex index, int faceIndex ) const override;
     QgsMeshDataBlock areFacesActive( QgsMeshDatasetIndex index, int faceIndex, int count ) const override;
-    bool persistDatasetGroup( const QString &path,
+    bool persistDatasetGroup( const QString &outputFilePath,
+                              const QString &outputDriver,
                               const QgsMeshDatasetGroupMetadata &meta,
                               const QVector<QgsMeshDataBlock> &datasetValues,
                               const QVector<QgsMeshDataBlock> &datasetActive,
                               const QVector<double> &times
                             ) override;
 
+    virtual bool persistDatasetGroup( const QString &outputFilePath,
+                                      const QString &outputDriver,
+                                      QgsMeshDatasetSourceInterface *source,
+                                      int datasetGroupIndex
+                                    ) override;
+
     //! Returns the memory provider key
     static QString providerKey();
     //! Returns the memory provider description
     static QString providerDescription();
     //! Provider factory
-    static QgsMeshMemoryDataProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &providerOptions );
+    static QgsMeshMemoryDataProvider *createProvider( const QString &uri,
+        const QgsDataProvider::ProviderOptions &providerOptions,
+        QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() );
 
   private:
-    void calculateMinMaxForDatasetGroup( QgsMeshMemoryDatasetGroup &grp ) const;
-    void calculateMinMaxForDataset( std::shared_ptr<QgsMeshMemoryDataset> &dataset ) const;
     QgsRectangle calculateExtent( ) const;
 
     bool splitMeshSections( const QString &uri );
     bool addMeshVertices( const QString &def );
-    bool addMeshFaces( const QString &def );
+    bool addMeshFacesOrEdges( const QString &def );
 
     bool splitDatasetSections( const QString &uri, QgsMeshMemoryDatasetGroup &datasetGroup );
     bool setDatasetGroupType( const QString &uri, QgsMeshMemoryDatasetGroup &datasetGroup );
     bool addDatasetGroupMetadata( const QString &def, QgsMeshMemoryDatasetGroup &datasetGroup );
     bool addDatasetValues( const QString &def, std::shared_ptr<QgsMeshMemoryDataset> &dataset, bool isScalar );
-    bool checkDatasetValidity( std::shared_ptr<QgsMeshMemoryDataset> &dataset, bool isOnVertices );
+    bool checkDatasetValidity( std::shared_ptr<QgsMeshMemoryDataset> &dataset, QgsMeshDatasetGroupMetadata::DataType dataType );
+    bool checkVertexId( int vertex_id );
+
+    void addGroupToTemporalCapabilities( int groupIndex, const QgsMeshMemoryDatasetGroup &group );
 
     QVector<QgsMeshVertex> mVertices;
     QVector<QgsMeshFace> mFaces;
+    QVector<QgsMeshEdge> mEdges;
     QVector<QgsMeshMemoryDatasetGroup> mDatasetGroups;
 
     bool mIsValid = false;

@@ -64,6 +64,8 @@ QgsPropertyTransformer &QgsPropertyTransformer::operator=( const QgsPropertyTran
   return *this;
 }
 
+QgsPropertyTransformer::~QgsPropertyTransformer() = default;
+
 bool QgsPropertyTransformer::loadVariant( const QVariant &transformer )
 {
   QVariantMap transformerMap = transformer.toMap();
@@ -175,6 +177,9 @@ bool QgsGenericNumericTransformer::loadVariant( const QVariant &transformer )
 
 double QgsGenericNumericTransformer::value( double input ) const
 {
+  if ( qgsDoubleNear( mMaxValue, mMinValue ) )
+    return qBound( mMinOutput, input, mMaxOutput );
+
   input = transformNumeric( input );
   if ( qgsDoubleNear( mExponent, 1.0 ) )
     return mMinOutput + ( qBound( mMinValue, input, mMaxValue ) - mMinValue ) * ( mMaxOutput - mMinOutput ) / ( mMaxValue - mMinValue );
@@ -684,12 +689,15 @@ QgsCurveTransform::QgsCurveTransform( const QgsCurveTransform &other )
 
 QgsCurveTransform &QgsCurveTransform::operator=( const QgsCurveTransform &other )
 {
-  mControlPoints = other.mControlPoints;
-  if ( other.mSecondDerivativeArray )
+  if ( this != &other )
   {
-    delete [] mSecondDerivativeArray;
-    mSecondDerivativeArray = new double[ mControlPoints.count()];
-    memcpy( mSecondDerivativeArray, other.mSecondDerivativeArray, sizeof( double ) * mControlPoints.count() );
+    mControlPoints = other.mControlPoints;
+    if ( other.mSecondDerivativeArray )
+    {
+      delete [] mSecondDerivativeArray;
+      mSecondDerivativeArray = new double[ mControlPoints.count()];
+      memcpy( mSecondDerivativeArray, other.mSecondDerivativeArray, sizeof( double ) * mControlPoints.count() );
+    }
   }
   return *this;
 }

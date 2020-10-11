@@ -26,7 +26,8 @@ import os
 from qgis.core import (Qgis,
                        QgsMessageLog,
                        QgsApplication,
-                       QgsProcessingProvider)
+                       QgsProcessingProvider,
+                       QgsRuntimeProfiler)
 
 from processing.core.ProcessingConfig import ProcessingConfig, Setting
 
@@ -58,18 +59,19 @@ class ScriptAlgorithmProvider(QgsProcessingProvider):
                                    DeleteScriptAction()]
 
     def load(self):
-        ProcessingConfig.settingIcons[self.name()] = self.icon()
-        ProcessingConfig.addSetting(Setting(self.name(),
-                                            ScriptUtils.SCRIPTS_FOLDERS,
-                                            self.tr("Scripts folder(s)"),
-                                            ScriptUtils.defaultScriptsFolder(),
-                                            valuetype=Setting.MULTIPLE_FOLDERS))
+        with QgsRuntimeProfiler.profile('Script Provider'):
+            ProcessingConfig.settingIcons[self.name()] = self.icon()
+            ProcessingConfig.addSetting(Setting(self.name(),
+                                                ScriptUtils.SCRIPTS_FOLDERS,
+                                                self.tr("Scripts folder(s)"),
+                                                ScriptUtils.defaultScriptsFolder(),
+                                                valuetype=Setting.MULTIPLE_FOLDERS))
 
-        ProviderActions.registerProviderActions(self, self.actions)
-        ProviderContextMenuActions.registerProviderContextMenuActions(self.contextMenuActions)
+            ProviderActions.registerProviderActions(self, self.actions)
+            ProviderContextMenuActions.registerProviderContextMenuActions(self.contextMenuActions)
 
-        ProcessingConfig.readSettings()
-        self.refreshAlgorithms()
+            ProcessingConfig.readSettings()
+            self.refreshAlgorithms()
 
         return True
 
@@ -111,14 +113,14 @@ class ScriptAlgorithmProvider(QgsProcessingProvider):
             if not folder:
                 continue
 
-            items = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
-            for entry in items:
-                if entry.lower().endswith(".py"):
-                    moduleName = os.path.splitext(os.path.basename(entry))[0]
-                    filePath = os.path.abspath(os.path.join(folder, entry))
-                    alg = ScriptUtils.loadAlgorithm(moduleName, filePath)
-                    if alg is not None:
-                        self.algs.append(alg)
+            for path, subdirs, files in os.walk(folder):
+                for entry in files:
+                    if entry.lower().endswith(".py"):
+                        moduleName = os.path.splitext(os.path.basename(entry))[0]
+                        filePath = os.path.abspath(os.path.join(path, entry))
+                        alg = ScriptUtils.loadAlgorithm(moduleName, filePath)
+                        if alg is not None:
+                            self.algs.append(alg)
 
         for a in self.algs:
             self.addAlgorithm(a)

@@ -16,6 +16,10 @@
 #include "qgsgeonodedataitemguiprovider.h"
 #include "qgsgeonodedataitems.h"
 #include "qgsgeonodenewconnection.h"
+#include "qgsmanageconnectionsdialog.h"
+
+#include <QFileDialog>
+#include <QMessageBox>
 
 void QgsGeoNodeDataItemGuiProvider::populateContextMenu( QgsDataItem *item, QMenu *menu, const QList<QgsDataItem *> &, QgsDataItemGuiContext )
 {
@@ -24,8 +28,16 @@ void QgsGeoNodeDataItemGuiProvider::populateContextMenu( QgsDataItem *item, QMen
     QAction *actionNew = new QAction( tr( "New Connection…" ), menu );
     connect( actionNew, &QAction::triggered, this, [rootItem] { newConnection( rootItem ); } );
     menu->addAction( actionNew );
+
+    QAction *actionSaveServers = new QAction( tr( "Save Connections…" ), this );
+    connect( actionSaveServers, &QAction::triggered, this, [] { saveConnections(); } );
+    menu->addAction( actionSaveServers );
+
+    QAction *actionLoadServers = new QAction( tr( "Load Connections…" ), this );
+    connect( actionLoadServers, &QAction::triggered, this, [rootItem] { loadConnections( rootItem ); } );
+    menu->addAction( actionLoadServers );
   }
-  else if ( QgsGeoNodeRootItem *connItem = qobject_cast< QgsGeoNodeRootItem * >( item ) )
+  else if ( QgsGeoNodeConnectionItem *connItem = qobject_cast< QgsGeoNodeConnectionItem * >( item ) )
   {
     QAction *actionEdit = new QAction( tr( "Edit Connection…" ), menu );
     connect( actionEdit, &QAction::triggered, this, [connItem] { editConnection( connItem ); } );
@@ -61,6 +73,30 @@ void QgsGeoNodeDataItemGuiProvider::editConnection( QgsDataItem *item )
 
 void QgsGeoNodeDataItemGuiProvider::deleteConnection( QgsDataItem *item )
 {
+  if ( QMessageBox::question( nullptr, tr( "Delete Connection" ), tr( "Are you sure you want to delete the connection “%1”?" ).arg( item->name() ),
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No ) != QMessageBox::Yes )
+    return;
+
   QgsGeoNodeConnectionUtils::deleteConnection( item->name() );
   item->parent()->refresh();
+}
+
+void QgsGeoNodeDataItemGuiProvider::saveConnections()
+{
+  QgsManageConnectionsDialog dlg( nullptr, QgsManageConnectionsDialog::Export, QgsManageConnectionsDialog::GeoNode );
+  dlg.exec();
+}
+
+void QgsGeoNodeDataItemGuiProvider::loadConnections( QgsDataItem *item )
+{
+  QString fileName = QFileDialog::getOpenFileName( nullptr, tr( "Load Connections" ), QDir::homePath(),
+                     tr( "XML files (*.xml *.XML)" ) );
+  if ( fileName.isEmpty() )
+  {
+    return;
+  }
+
+  QgsManageConnectionsDialog dlg( nullptr, QgsManageConnectionsDialog::Import, QgsManageConnectionsDialog::GeoNode, fileName );
+  if ( dlg.exec() == QDialog::Accepted )
+    item->refreshConnections();
 }

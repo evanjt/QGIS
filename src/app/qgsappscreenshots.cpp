@@ -31,7 +31,7 @@
 #include "qgsrendererpropertiesdialog.h"
 #include "qgs25drendererwidget.h"
 #include "qgsapplication.h"
-#include "qgsoptions.h"
+#include "options/qgsoptions.h"
 #include "qgsguiutils.h"
 #include "qgsvectorlayerjoininfo.h"
 #include "qgsrasterlayer.h"
@@ -236,7 +236,7 @@ void QgsAppScreenShots::setGradientSize( int size )
 void QgsAppScreenShots::takeVectorLayerProperties()
 {
   QString folder = QStringLiteral( "working_with_vector/img/auto_generated/vector_layer_properties" );
-  QgsVectorLayerProperties *dlg = new QgsVectorLayerProperties( mLineLayer, QgisApp::instance() );
+  QgsVectorLayerProperties *dlg = new QgsVectorLayerProperties( QgisApp::instance()->mapCanvas(), QgisApp::instance()->visibleMessageBar(), mLineLayer, QgisApp::instance() );
   dlg->show();
   dlg->mJoinTreeWidget->expandAll(); // expand join tree
   // ----------------
@@ -273,7 +273,7 @@ void QgsAppScreenShots::takeVectorLayerProperties()
 void QgsAppScreenShots::takeVectorLayerProperties25DSymbol()
 {
   QString folder = QStringLiteral( "working_with_vector/img/auto_generated/vector_layer_properties/" );
-  QgsVectorLayerProperties *dlg = new QgsVectorLayerProperties( mPolygonLayer, QgisApp::instance() );
+  QgsVectorLayerProperties *dlg = new QgsVectorLayerProperties( QgisApp::instance()->mapCanvas(), QgisApp::instance()->visibleMessageBar(), mPolygonLayer, QgisApp::instance() );
   dlg->show();
   dlg->mOptionsListWidget->setCurrentRow( 2 );
   Q_ASSERT( dlg->mOptionsListWidget->currentItem()->icon().pixmap( 24, 24 ).toImage()
@@ -317,11 +317,13 @@ void QgsAppScreenShots::takeGlobalOptions()
   }
   // -----------------
   // advanced settings
-  dlg->mOptionsListWidget->setCurrentRow( 15 );
+  dlg->mOptionsListWidget->setCurrentRow( dlg->mOptionsListWidget->count() - 1 );
   QCoreApplication::processEvents();
   Q_ASSERT( dlg->mOptionsListWidget->currentItem()->icon().pixmap( 24, 24 ).toImage()
             == QgsApplication::getThemeIcon( QStringLiteral( "/mIconWarning.svg" ) ).pixmap( 24, 24 ).toImage() );
-  dlg->mAdvancedSettingsEditor->show();
+  QWidget *editor = dlg->findChild< QWidget * >( QStringLiteral( "mAdvancedSettingsEditor" ) );
+  if ( editor )
+    editor->show();
   QCoreApplication::processEvents();
   QCoreApplication::processEvents(); // seems a second call is needed, the tabble might not be fully displayed otherwise
   takeScreenshot( QStringLiteral( "advanced_with_settings_shown" ), folder, dlg );

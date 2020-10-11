@@ -19,6 +19,7 @@
 #include "qgsmessagebaritem.h"
 #include "qgsmessageoutput.h"
 #include "qgsproject.h"
+#include "qgsinstallgridshiftdialog.h"
 
 //
 // QgsAppMissingRequiredGridHandler
@@ -55,29 +56,25 @@ QgsAppMissingGridHandler::QgsAppMissingGridHandler( QObject *parent )
     emit missingGridUsedByContextHandler( sourceCrs, destinationCrs, desired );
   } );
 
+  QgsCoordinateTransform::setFallbackOperationOccurredHandler( [ = ]( const QgsCoordinateReferenceSystem & sourceCrs,
+      const QgsCoordinateReferenceSystem & destinationCrs,
+      const QString & desired )
+  {
+    emit fallbackOperationOccurred( sourceCrs, destinationCrs, desired );
+  } );
+
   connect( this, &QgsAppMissingGridHandler::missingRequiredGrid, this, &QgsAppMissingGridHandler::onMissingRequiredGrid, Qt::QueuedConnection );
   connect( this, &QgsAppMissingGridHandler::missingPreferredGrid, this, &QgsAppMissingGridHandler::onMissingPreferredGrid, Qt::QueuedConnection );
   connect( this, &QgsAppMissingGridHandler::coordinateOperationCreationError, this, &QgsAppMissingGridHandler::onCoordinateOperationCreationError, Qt::QueuedConnection );
   connect( this, &QgsAppMissingGridHandler::missingGridUsedByContextHandler, this, &QgsAppMissingGridHandler::onMissingGridUsedByContextHandler, Qt::QueuedConnection );
+  connect( this, &QgsAppMissingGridHandler::fallbackOperationOccurred, this, &QgsAppMissingGridHandler::onFallbackOperationOccurred, Qt::QueuedConnection );
 
-  connect( QgsProject::instance(), &QgsProject::cleared, this, [ = ] { mAlreadyWarnedPairsForProject.clear(); } );
-
-}
-
-QString displayIdentifierForCrs( const QgsCoordinateReferenceSystem &crs, bool shortString = false )
-{
-  if ( !crs.authid().isEmpty() )
+  connect( QgsProject::instance(), &QgsProject::cleared, this, [ = ]
   {
-    if ( !shortString && !crs.description().isEmpty() )
-      return QStringLiteral( "%1 [%2]" ).arg( crs.authid(), crs.description() );
-    return crs.authid();
-  }
-  else if ( !crs.description().isEmpty() )
-    return crs.description();
-  else if ( !crs.toProj4().isEmpty() )
-    return crs.toProj4();
-  else
-    return crs.toWkt();
+    mAlreadyWarnedPairsForProject.clear();
+    mAlreadyWarnedBallparkPairsForProject.clear();
+  } );
+
 }
 
 void QgsAppMissingGridHandler::onMissingRequiredGrid( const QgsCoordinateReferenceSystem &sourceCrs, const QgsCoordinateReferenceSystem &destinationCrs, const QgsDatumTransform::GridDetails &grid )
@@ -85,10 +82,11 @@ void QgsAppMissingGridHandler::onMissingRequiredGrid( const QgsCoordinateReferen
   if ( !shouldWarnAboutPair( sourceCrs, destinationCrs ) )
     return;
 
-  const QString shortMessage = tr( "No transform available between %1 and %2" ).arg( displayIdentifierForCrs( sourceCrs, true ),
-                               displayIdentifierForCrs( destinationCrs, true ) );
+  const QString shortMessage = tr( "No transform available between %1 and %2" ).arg( sourceCrs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ),
+                               destinationCrs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ) );
 
   QString downloadMessage;
+  const QString gridName = grid.shortName;
   if ( !grid.url.isEmpty() )
   {
     if ( !grid.packageName.isEmpty() )
@@ -102,21 +100,24 @@ void QgsAppMissingGridHandler::onMissingRequiredGrid( const QgsCoordinateReferen
   }
 
   const QString longMessage = tr( "<p>No transform is available between <i>%1</i> and <i>%2</i>.</p>"
-                                  "<p>This transformation requires the grid file “%3”, which is not available for use on the system.%4</p>" ).arg( displayIdentifierForCrs( sourceCrs ),
-                                      displayIdentifierForCrs( destinationCrs ),
-                                      grid.shortName,
-                                      downloadMessage.isEmpty() ? QString() : " " + downloadMessage );
+                                  "<p>This transformation requires the grid file “%3”, which is not available for use on the system.</p>" ).arg( sourceCrs.userFriendlyIdentifier(),
+                                      destinationCrs.userFriendlyIdentifier(),
+                                      grid.shortName );
 
   QgsMessageBar *bar = QgisApp::instance()->messageBar();
   QgsMessageBarItem *widget = bar->createMessage( QString(), shortMessage );
   QPushButton *detailsButton = new QPushButton( tr( "Details" ) );
-  connect( detailsButton, &QPushButton::clicked, this, [longMessage]
+  connect( detailsButton, &QPushButton::clicked, this, [longMessage, downloadMessage, bar, widget, gridName]
   {
-    // dlg has deleted on close
-    QgsMessageOutput * dlg( QgsMessageOutput::createMessageOutput() );
-    dlg->setTitle( tr( "No Transformations Available" ) );
-    dlg->setMessage( longMessage, QgsMessageOutput::MessageHtml );
-    dlg->showMessage();
+    QgsInstallGridShiftFileDialog *dlg = new QgsInstallGridShiftFileDialog( gridName, QgisApp::instance() );
+    dlg->setAttribute( Qt::WA_DeleteOnClose );
+    dlg->setWindowTitle( tr( "No Transformations Available" ) );
+    dlg->setDescription( longMessage );
+    dlg->setDownloadMessage( downloadMessage );
+    if ( dlg->exec() )
+    {
+      bar->popWidget( widget );
+    }
   } );
 
   widget->layout()->addWidget( detailsButton );
@@ -128,24 +129,27 @@ void QgsAppMissingGridHandler::onMissingPreferredGrid( const QgsCoordinateRefere
   if ( !shouldWarnAboutPair( sourceCrs, destinationCrs ) )
     return;
 
-  const QString shortMessage = tr( "Cannot use preferred transform between %1 and %2" ).arg( displayIdentifierForCrs( sourceCrs, true ),
-                               displayIdentifierForCrs( destinationCrs, true ) );
+  const QString shortMessage = tr( "Cannot use preferred transform between %1 and %2" ).arg( sourceCrs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ),
+                               destinationCrs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ) );
 
   QString gridMessage;
+  QString downloadMessage;
+  QString gridName;
   for ( const QgsDatumTransform::GridDetails &grid : preferredOperation.grids )
   {
     if ( !grid.isAvailable )
     {
       QString m = tr( "This transformation requires the grid file “%1”, which is not available for use on the system." ).arg( grid.shortName );
+      gridName = grid.shortName;
       if ( !grid.url.isEmpty() )
       {
         if ( !grid.packageName.isEmpty() )
         {
-          m += ' ' +  tr( "This grid is part of the <i>%1</i> package, available for download from <a href=\"%2\">%2</a>." ).arg( grid.packageName, grid.url );
+          downloadMessage = tr( "This grid is part of the <i>%1</i> package, available for download from <a href=\"%2\">%2</a>." ).arg( grid.packageName, grid.url );
         }
         else
         {
-          m += ' ' + tr( "This grid is available for download from <a href=\"%1\">%1</a>." ).arg( grid.url );
+          downloadMessage = tr( "This grid is available for download from <a href=\"%1\">%1</a>." ).arg( grid.url );
         }
       }
       gridMessage += QStringLiteral( "<li>%1</li>" ).arg( m );
@@ -164,20 +168,24 @@ void QgsAppMissingGridHandler::onMissingPreferredGrid( const QgsCoordinateRefere
     accuracyMessage = tr( "<p>Current transform “<i>%1</i>” has an unknown accuracy, while the preferred transformation “<i>%2</i>” has accuracy %3 meters.</p>" ).arg( availableOperation.name )
                       .arg( preferredOperation.name ).arg( preferredOperation.accuracy );
 
-  const QString longMessage = tr( "<p>The preferred transform between <i>%1</i> and <i>%2</i> is not available for use on the system.</p>" ).arg( displayIdentifierForCrs( sourceCrs ),
-                              displayIdentifierForCrs( destinationCrs ) )
+  const QString longMessage = tr( "<p>The preferred transform between <i>%1</i> and <i>%2</i> is not available for use on the system.</p>" ).arg( sourceCrs.userFriendlyIdentifier(),
+                              destinationCrs.userFriendlyIdentifier() )
                               + gridMessage + accuracyMessage;
 
   QgsMessageBar *bar = QgisApp::instance()->messageBar();
   QgsMessageBarItem *widget = bar->createMessage( QString(), shortMessage );
   QPushButton *detailsButton = new QPushButton( tr( "Details" ) );
-  connect( detailsButton, &QPushButton::clicked, this, [longMessage]
+  connect( detailsButton, &QPushButton::clicked, this, [longMessage, downloadMessage, gridName, widget, bar]
   {
-    // dlg has deleted on close
-    QgsMessageOutput * dlg( QgsMessageOutput::createMessageOutput() );
-    dlg->setTitle( tr( "Preferred Transformation Not Available" ) );
-    dlg->setMessage( longMessage, QgsMessageOutput::MessageHtml );
-    dlg->showMessage();
+    QgsInstallGridShiftFileDialog *dlg = new QgsInstallGridShiftFileDialog( gridName, QgisApp::instance() );
+    dlg->setAttribute( Qt::WA_DeleteOnClose );
+    dlg->setWindowTitle( tr( "Preferred Transformation Not Available" ) );
+    dlg->setDescription( longMessage );
+    dlg->setDownloadMessage( downloadMessage );
+    if ( dlg->exec() )
+    {
+      bar->popWidget( widget );
+    }
   } );
 
   widget->layout()->addWidget( detailsButton );
@@ -189,8 +197,8 @@ void QgsAppMissingGridHandler::onCoordinateOperationCreationError( const QgsCoor
   if ( !shouldWarnAboutPairForCurrentProject( sourceCrs, destinationCrs ) )
     return;
 
-  const QString shortMessage = tr( "No transform available between %1 and %2" ).arg( displayIdentifierForCrs( sourceCrs, true ), displayIdentifierForCrs( destinationCrs, true ) );
-  const QString longMessage = tr( "<p>No transform is available between <i>%1</i> and <i>%2</i>.</p><p style=\"color: red\">%3</p>" ).arg( displayIdentifierForCrs( sourceCrs ), displayIdentifierForCrs( destinationCrs ), error );
+  const QString shortMessage = tr( "No transform available between %1 and %2" ).arg( sourceCrs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ), destinationCrs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ) );
+  const QString longMessage = tr( "<p>No transform is available between <i>%1</i> and <i>%2</i>.</p><p style=\"color: red\">%3</p>" ).arg( sourceCrs.userFriendlyIdentifier(), destinationCrs.userFriendlyIdentifier(), error );
 
   QgsMessageBar *bar = QgisApp::instance()->messageBar();
   QgsMessageBarItem *widget = bar->createMessage( QString(), shortMessage );
@@ -213,24 +221,27 @@ void QgsAppMissingGridHandler::onMissingGridUsedByContextHandler( const QgsCoord
   if ( !shouldWarnAboutPairForCurrentProject( sourceCrs, destinationCrs ) )
     return;
 
-  const QString shortMessage = tr( "Cannot use project transform between %1 and %2" ).arg( displayIdentifierForCrs( sourceCrs, true ),
-                               displayIdentifierForCrs( destinationCrs, true ) );
+  const QString shortMessage = tr( "Cannot use project transform between %1 and %2" ).arg( sourceCrs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ),
+                               destinationCrs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ) );
 
   QString gridMessage;
+  QString downloadMessage;
+  QString gridName;
   for ( const QgsDatumTransform::GridDetails &grid : desired.grids )
   {
     if ( !grid.isAvailable )
     {
+      gridName = grid.shortName;
       QString m = tr( "This transformation requires the grid file “%1”, which is not available for use on the system." ).arg( grid.shortName );
       if ( !grid.url.isEmpty() )
       {
         if ( !grid.packageName.isEmpty() )
         {
-          m += ' ' +  tr( "This grid is part of the <i>%1</i> package, available for download from <a href=\"%2\">%2</a>." ).arg( grid.packageName, grid.url );
+          downloadMessage = tr( "This grid is part of the <i>%1</i> package, available for download from <a href=\"%2\">%2</a>." ).arg( grid.packageName, grid.url );
         }
         else
         {
-          m += ' ' + tr( "This grid is available for download from <a href=\"%1\">%1</a>." ).arg( grid.url );
+          downloadMessage = tr( "This grid is available for download from <a href=\"%1\">%1</a>." ).arg( grid.url );
         }
       }
       gridMessage += QStringLiteral( "<li>%1</li>" ).arg( m );
@@ -241,11 +252,38 @@ void QgsAppMissingGridHandler::onMissingGridUsedByContextHandler( const QgsCoord
     gridMessage = "<ul>" + gridMessage + "</ul>";
   }
 
-  const QString longMessage = tr( "<p>This project specifies a preset transform between <i>%1</i> and <i>%2</i>, which is not available for use on the system.</p>" ).arg( displayIdentifierForCrs( sourceCrs ),
-                              displayIdentifierForCrs( destinationCrs ) )
+  const QString longMessage = tr( "<p>This project specifies a preset transform between <i>%1</i> and <i>%2</i>, which is not available for use on the system.</p>" ).arg( sourceCrs.userFriendlyIdentifier(),
+                              destinationCrs.userFriendlyIdentifier() )
                               + gridMessage
                               + tr( "<p>The operation specified for use in the project is:</p><p><code>%1</code></p>" ).arg( desired.proj ) ;
 
+  QgsMessageBar *bar = QgisApp::instance()->messageBar();
+  QgsMessageBarItem *widget = bar->createMessage( QString(), shortMessage );
+  QPushButton *detailsButton = new QPushButton( tr( "Details" ) );
+  connect( detailsButton, &QPushButton::clicked, this, [longMessage, gridName, downloadMessage, bar, widget]
+  {
+    QgsInstallGridShiftFileDialog *dlg = new QgsInstallGridShiftFileDialog( gridName, QgisApp::instance() );
+    dlg->setAttribute( Qt::WA_DeleteOnClose );
+    dlg->setWindowTitle( tr( "Project Transformation Not Available" ) );
+    dlg->setDescription( longMessage );
+    dlg->setDownloadMessage( downloadMessage );
+    if ( dlg->exec() )
+    {
+      bar->popWidget( widget );
+    }
+  } );
+
+  widget->layout()->addWidget( detailsButton );
+  bar->pushWidget( widget, Qgis::Critical, 0 );
+}
+
+void QgsAppMissingGridHandler::onFallbackOperationOccurred( const QgsCoordinateReferenceSystem &sourceCrs, const QgsCoordinateReferenceSystem &destinationCrs, const QString &desired )
+{
+  if ( !shouldWarnAboutBallparkPairForCurrentProject( sourceCrs, destinationCrs ) )
+    return;
+
+  const QString shortMessage = tr( "Used a ballpark transform from %1 to %2" ).arg( sourceCrs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ), destinationCrs.userFriendlyIdentifier( QgsCoordinateReferenceSystem::ShortString ) );
+  const QString longMessage = tr( "<p>An alternative, ballpark-only transform was used when transforming coordinates between <i>%1</i> and <i>%2</i>. The results may not match those obtained by using the preferred operation:</p><code>%3</code><p style=\"font-weight: bold\">Possibly an incorrect choice of operation was made for transformations between these reference systems. Check the Project Properties and ensure that the selected transform operations are applicable over the whole extent of the current project." ).arg( sourceCrs.userFriendlyIdentifier(), destinationCrs.userFriendlyIdentifier(), desired );
 
   QgsMessageBar *bar = QgisApp::instance()->messageBar();
   QgsMessageBarItem *widget = bar->createMessage( QString(), shortMessage );
@@ -254,13 +292,13 @@ void QgsAppMissingGridHandler::onMissingGridUsedByContextHandler( const QgsCoord
   {
     // dlg has deleted on close
     QgsMessageOutput * dlg( QgsMessageOutput::createMessageOutput() );
-    dlg->setTitle( tr( "Project Transformation Not Available" ) );
+    dlg->setTitle( tr( "Ballpark Transform Occurred" ) );
     dlg->setMessage( longMessage, QgsMessageOutput::MessageHtml );
     dlg->showMessage();
   } );
 
   widget->layout()->addWidget( detailsButton );
-  bar->pushWidget( widget, Qgis::Critical, 0 );
+  bar->pushWidget( widget, Qgis::Warning, 0 );
 }
 
 bool QgsAppMissingGridHandler::shouldWarnAboutPair( const QgsCoordinateReferenceSystem &source, const QgsCoordinateReferenceSystem &dest )
@@ -282,5 +320,16 @@ bool QgsAppMissingGridHandler::shouldWarnAboutPairForCurrentProject( const QgsCo
   }
 
   mAlreadyWarnedPairsForProject.append( qMakePair( source, dest ) );
+  return true;
+}
+
+bool QgsAppMissingGridHandler::shouldWarnAboutBallparkPairForCurrentProject( const QgsCoordinateReferenceSystem &source, const QgsCoordinateReferenceSystem &dest )
+{
+  if ( mAlreadyWarnedBallparkPairsForProject.contains( qMakePair( source, dest ) ) || mAlreadyWarnedBallparkPairsForProject.contains( qMakePair( dest, source ) ) )
+  {
+    return false;
+  }
+
+  mAlreadyWarnedBallparkPairsForProject.append( qMakePair( source, dest ) );
   return true;
 }

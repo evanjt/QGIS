@@ -73,10 +73,13 @@ class GUI_EXPORT QgsRelationReferenceWidgetWrapper : public QgsEditorWidgetWrapp
   private:
     void updateValues( const QVariant &val, const QVariantList &additionalValues = QVariantList() ) override;
 
+    QString mExpression;
+
     QgsRelationReferenceWidget *mWidget = nullptr;
     QgsMapCanvas *mCanvas = nullptr;
     QgsMessageBar *mMessageBar = nullptr;
     bool mIndeterminateState;
+
 };
 
 #endif // QGSRELATIONREFERENCEWIDGETWRAPPER_H

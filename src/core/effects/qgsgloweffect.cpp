@@ -29,19 +29,8 @@ QgsGlowEffect::QgsGlowEffect()
 
 QgsGlowEffect::QgsGlowEffect( const QgsGlowEffect &other )
   : QgsPaintEffect( other )
-  , mSpread( other.spread() )
-  , mSpreadUnit( other.spreadUnit() )
-  , mSpreadMapUnitScale( other.spreadMapUnitScale() )
-  , mBlurLevel( other.blurLevel() )
-  , mOpacity( other.opacity() )
-  , mColor( other.color() )
-  , mBlendMode( other.blendMode() )
-  , mColorType( other.colorType() )
 {
-  if ( other.ramp() )
-  {
-    mRamp = other.ramp()->clone();
-  }
+  operator=( other );
 }
 
 QgsGlowEffect::~QgsGlowEffect()
@@ -103,10 +92,9 @@ void QgsGlowEffect::draw( QgsRenderContext &context )
   }
 
   QPainter *painter = context.painter();
-  painter->save();
+  QgsScopedQPainterState painterState( painter );
   painter->setCompositionMode( mBlendMode );
   painter->drawImage( imageOffset( context ), im );
-  painter->restore();
 }
 
 QgsStringMap QgsGlowEffect::properties() const
@@ -127,7 +115,11 @@ QgsStringMap QgsGlowEffect::properties() const
 
   if ( mRamp )
   {
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     props.unite( mRamp->properties() );
+#else
+    props.insert( mRamp->properties() );
+#endif
   }
 
   return props;
@@ -190,7 +182,7 @@ void QgsGlowEffect::readProperties( const QgsStringMap &props )
 
 //attempt to create color ramp from props
   delete mRamp;
-  if ( props.contains( QStringLiteral( "rampType" ) ) && props[QStringLiteral( "rampType" )] == QStringLiteral( "cpt-city" ) )
+  if ( props.contains( QStringLiteral( "rampType" ) ) && props[QStringLiteral( "rampType" )] == QLatin1String( "cpt-city" ) )
   {
     mRamp = QgsCptCityColorRamp::create( props );
   }
@@ -214,8 +206,12 @@ QgsGlowEffect &QgsGlowEffect::operator=( const QgsGlowEffect &rhs )
   delete mRamp;
 
   mSpread = rhs.spread();
+  mSpreadUnit = rhs.spreadUnit();
+  mSpreadMapUnitScale = rhs.spreadMapUnitScale();
   mRamp = rhs.ramp() ? rhs.ramp()->clone() : nullptr;
   mBlurLevel = rhs.blurLevel();
+  mBlurUnit = rhs.mBlurUnit;
+  mBlurMapUnitScale = rhs.mBlurMapUnitScale;
   mOpacity = rhs.opacity();
   mColor = rhs.color();
   mBlendMode = rhs.blendMode();

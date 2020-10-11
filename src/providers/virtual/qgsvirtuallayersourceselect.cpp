@@ -43,6 +43,9 @@ QgsVirtualLayerSourceSelect::QgsVirtualLayerSourceSelect( QWidget *parent, Qt::W
   setupUi( this );
   setupButtons( buttonBox );
 
+  mQueryEdit->setMarginWidth( 1, QStringLiteral( "000" ) );
+  mQueryEdit->setMarginLineNumbers( 1, true );
+
   connect( mTestButton, &QAbstractButton::clicked, this, &QgsVirtualLayerSourceSelect::testQuery );
   connect( mBrowseCRSBtn, &QAbstractButton::clicked, this, &QgsVirtualLayerSourceSelect::browseCRS );
   connect( mAddLayerBtn, &QAbstractButton::clicked, this, &QgsVirtualLayerSourceSelect::addLayer );
@@ -128,7 +131,9 @@ void QgsVirtualLayerSourceSelect::layerComboChanged( int idx )
   {
     mGeometryRadio->setChecked( true );
     mSrid = def.geometrySrid();
+    Q_NOWARN_DEPRECATED_PUSH
     QgsCoordinateReferenceSystem crs( def.geometrySrid() );
+    Q_NOWARN_DEPRECATED_POP
     mCRS->setText( crs.authid() );
     mGeometryType->setCurrentIndex( static_cast<long>( def.geometryWkbType() ) - 1 );
     mGeometryField->setText( def.geometryField() );
@@ -150,9 +155,13 @@ void QgsVirtualLayerSourceSelect::layerComboChanged( int idx )
 void QgsVirtualLayerSourceSelect::browseCRS()
 {
   QgsProjectionSelectionDialog crsSelector( this );
+  Q_NOWARN_DEPRECATED_PUSH
   QgsCoordinateReferenceSystem crs( mSrid );
+  Q_NOWARN_DEPRECATED_POP
   crsSelector.setCrs( crs );
-  crsSelector.setMessage( QString() );
+  if ( !crs.isValid() )
+    crsSelector.showNoCrsForLayerMessage();
+
   if ( crsSelector.exec() )
   {
     mCRS->setText( crsSelector.crs().authid() );

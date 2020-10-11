@@ -105,6 +105,7 @@ typedef SInt32 SRefCon;
 #include "qgsversionmigration.h"
 #include "qgsfirstrundialog.h"
 #include "qgsproxystyle.h"
+#include "qgsmessagebar.h"
 
 #include "qgsuserprofilemanager.h"
 #include "qgsuserprofile.h"
@@ -371,40 +372,63 @@ void qgisCrash( int signal )
  * Based on qInstallMsgHandler example code in the Qt documentation.
  *
  */
-void myMessageOutput( QtMsgType type, const char *msg )
+void myMessageOutput( QtMsgType type, const QMessageLogContext &, const QString &msg )
 {
   switch ( type )
   {
     case QtDebugMsg:
-      myPrint( "%s\n", msg );
-      if ( strncmp( msg, "Backtrace", 9 ) == 0 )
-        dumpBacktrace( atoi( msg + 9 ) );
+      myPrint( "%s\n", msg.toLocal8Bit().constData() );
+      if ( msg.startsWith( QLatin1String( "Backtrace" ) ) )
+      {
+        const QString trace = msg.mid( 9 );
+        dumpBacktrace( atoi( trace.toLocal8Bit().constData() ) );
+      }
       break;
     case QtCriticalMsg:
-      myPrint( "Critical: %s\n", msg );
+      myPrint( "Critical: %s\n", msg.toLocal8Bit().constData() );
+
+#ifdef QGISDEBUG
+      dumpBacktrace( 20 );
+#endif
+
       break;
     case QtWarningMsg:
     {
-      // Ignore libpng iCPP known incorrect SRGB profile errors
-      // (which are thrown by 3rd party components we have no control over and have low value anyway).
-      if ( strncmp( msg, "libpng warning: iCCP: known incorrect sRGB profile", 50 ) == 0 )
+      /* Ignore:
+       * - libpng iCPP known incorrect SRGB profile errors (which are thrown by 3rd party components
+       *  we have no control over and have low value anyway);
+       * - QtSVG warnings with regards to lack of implementation beyond Tiny SVG 1.2
+       */
+      if ( msg.startsWith( QLatin1String( "libpng warning: iCCP: known incorrect sRGB profile" ), Qt::CaseInsensitive ) ||
+           msg.contains( QLatin1String( "Could not add child element to parent element because the types are incorrect" ), Qt::CaseInsensitive ) )
         break;
 
-      myPrint( "Warning: %s\n", msg );
+      myPrint( "Warning: %s\n", msg.toLocal8Bit().constData() );
 
 #ifdef QGISDEBUG
       // Print all warnings except setNamedColor.
       // Only seems to happen on windows
-      if ( 0 != strncmp( msg, "QColor::setNamedColor: Unknown color name 'param", 48 ) )
+      if ( !msg.startsWith( QLatin1String( "QColor::setNamedColor: Unknown color name 'param" ), Qt::CaseInsensitive )
+           && !msg.startsWith( QLatin1String( "Trying to create a QVariant instance of QMetaType::Void type, an invalid QVariant will be constructed instead" ), Qt::CaseInsensitive )
+           && !msg.startsWith( QLatin1String( "Logged warning" ), Qt::CaseInsensitive ) )
       {
         // TODO: Verify this code in action.
         dumpBacktrace( 20 );
-        QgsMessageLog::logMessage( msg, QStringLiteral( "Qt" ) );
+
+        // also be super obnoxious -- we DON'T want to allow these errors to be ignored!!
+        if ( QgisApp::instance() && QgisApp::instance()->messageBar() && QgisApp::instance()->thread() == QThread::currentThread() )
+        {
+          QgisApp::instance()->messageBar()->pushCritical( QStringLiteral( "Qt" ), msg );
+        }
+        else
+        {
+          QgsMessageLog::logMessage( msg, QStringLiteral( "Qt" ) );
+        }
       }
 #endif
 
       // TODO: Verify this code in action.
-      if ( 0 == strncmp( msg, "libpng error:", 13 ) )
+      if ( msg.startsWith( QLatin1String( "libpng error:" ), Qt::CaseInsensitive ) )
       {
         // Let the user know
         QgsMessageLog::logMessage( msg, QStringLiteral( "libpng" ) );
@@ -415,7 +439,7 @@ void myMessageOutput( QtMsgType type, const char *msg )
 
     case QtFatalMsg:
     {
-      myPrint( "Fatal: %s\n", msg );
+      myPrint( "Fatal: %s\n", msg.toLocal8Bit().constData() );
 #ifdef QGIS_CRASH
       qgisCrash( -1 );
 #else
@@ -426,7 +450,7 @@ void myMessageOutput( QtMsgType type, const char *msg )
     }
 
     case QtInfoMsg:
-      myPrint( "Info: %s\n", msg );
+      myPrint( "Info: %s\n", msg.toLocal8Bit().constData() );
       break;
   }
 }
@@ -494,7 +518,7 @@ int main( int argc, char *argv[] )
 
   // Set up the custom qWarning/qDebug custom handler
 #ifndef ANDROID
-  qInstallMsgHandler( myMessageOutput );
+  qInstallMessageHandler( myMessageOutput );
 #endif
 
 #ifdef QGIS_CRASH
@@ -572,7 +596,6 @@ int main( int argc, char *argv[] )
 
   // The user can specify a path which will override the default path of custom
   // user settings (~/.qgis) and it will be used for QgsSettings INI file
-  QString configpath;
   QString authdbdirectory;
 
   QString pythonfile;
@@ -588,7 +611,7 @@ int main( int argc, char *argv[] )
 #if defined(ANDROID)
   QgsDebugMsg( QStringLiteral( "Android: All params stripped" ) );// Param %1" ).arg( argv[0] ) );
   //put all QGIS settings in the same place
-  configpath = QgsApplication::qgisSettingsDirPath();
+  QString configpath = QgsApplication::qgisSettingsDirPath();
   QgsDebugMsg( QStringLiteral( "Android: configpath set to %1" ).arg( configpath ) );
 #endif
 
@@ -848,7 +871,7 @@ int main( int argc, char *argv[] )
                 "You are seeing this message most likely because you "
                 "have no DISPLAY environment variable set.\n"
               ).toUtf8().constData();
-    exit( 1 ); //exit for now until a version of qgis is capabable of running non interactive
+    exit( 1 ); //exit for now until a version of qgis is capable of running non interactive
   }
 
   // GUI customization is enabled according to settings (loaded when instance is created)
@@ -866,13 +889,32 @@ int main( int argc, char *argv[] )
   QCoreApplication::setAttribute( Qt::AA_DisableWindowContextHelpButton, true );
 #endif
 
+  // Set up an OpenGL Context to be shared between threads beforehand
+  // for plugins that depend on Qt WebEngine module.
+  // As suggested by Qt documentation at:
+  //   - https://doc.qt.io/qt-5/qtwebengine.html
+  //   - https://code.qt.io/cgit/qt/qtwebengine.git/plain/src/webenginewidgets/api/qtwebenginewidgetsglobal.cpp
+#if defined(QT_OS_WIN) && !defined(QT_NO_OPENGL) && (QT_VERSION >= QT_VERSION_CHECK(5, 4, 0) )
+  QCoreApplication::setAttribute( Qt::AA_ShareOpenGLContexts, true );
+#endif
+
   // Set up the QgsSettings Global Settings:
   // - use the path specified with --globalsettingsfile path,
   // - use the environment if not found
+  // - use the AppDataLocation ($HOME/.local/share/QGIS/QGIS3 on Linux, roaming path on Windows)
   // - use a default location as a fallback
   if ( globalsettingsfile.isEmpty() )
   {
     globalsettingsfile = getenv( "QGIS_GLOBAL_SETTINGS_FILE" );
+  }
+
+  if ( globalsettingsfile.isEmpty() )
+  {
+    QStringList startupPaths = QStandardPaths::locateAll( QStandardPaths::AppDataLocation, QStringLiteral( "qgis_global_settings.ini" ) );
+    if ( !startupPaths.isEmpty() )
+    {
+      globalsettingsfile = startupPaths.at( 0 );
+    }
   }
 
   if ( globalsettingsfile.isEmpty() )
@@ -1004,9 +1046,9 @@ int main( int argc, char *argv[] )
 
     QgsSettings migSettings;
     int firstRunVersion = migSettings.value( QStringLiteral( "migration/firstRunVersionFlag" ), 0 ).toInt();
-    bool showWelcome = ( firstRunVersion == 0  || Qgis::QGIS_VERSION_INT > firstRunVersion );
+    bool showWelcome = ( firstRunVersion == 0  || Qgis::versionInt() > firstRunVersion );
 
-    std::unique_ptr< QgsVersionMigration > migration( QgsVersionMigration::canMigrate( 20000, Qgis::QGIS_VERSION_INT ) );
+    std::unique_ptr< QgsVersionMigration > migration( QgsVersionMigration::canMigrate( 20000, Qgis::versionInt() ) );
     if ( migration && ( settingsMigrationForce || migration->requiresMigration() ) )
     {
       bool runMigration = true;
@@ -1019,7 +1061,7 @@ int main( int argc, char *argv[] )
         }
         dlg.exec();
         runMigration = dlg.migrateSettings();
-        migSettings.setValue( QStringLiteral( "migration/firstRunVersionFlag" ), Qgis::QGIS_VERSION_INT );
+        migSettings.setValue( QStringLiteral( "migration/firstRunVersionFlag" ), Qgis::versionInt() );
       }
 
       if ( runMigration )
@@ -1083,8 +1125,7 @@ int main( int argc, char *argv[] )
   // An app bundled with QGIS_MACAPP_BUNDLE > 0 is considered a release bundle.
   QString  relLibPath( QDir::cleanPath( QCoreApplication::applicationDirPath().append( "/../PlugIns" ) ) );
   // Note: relLibPath becomes the defacto QT_PLUGINS_DIR of a release app bundle
-  if ( QFile::exists( relLibPath + QStringLiteral( "/imageformats" ) )
-       && QFile::exists( relLibPath + QStringLiteral( "/codecs" ) ) )
+  if ( QFile::exists( relLibPath + QStringLiteral( "/imageformats" ) ) )
   {
     // We are in a release app bundle.
     // Strip QT_PLUGINS_DIR because it will crash a launched release app bundle, since
@@ -1157,22 +1198,24 @@ int main( int argc, char *argv[] )
   QgsCustomization::instance()->loadDefault();
 
 #ifdef Q_OS_MACX
-  // If the GDAL plugins are bundled with the application and GDAL_DRIVER_PATH
-  // is not already defined, use the GDAL plugins in the application bundle.
-  QString gdalPlugins( QCoreApplication::applicationDirPath().append( "/lib/gdalplugins" ) );
-  if ( QFile::exists( gdalPlugins ) && !getenv( "GDAL_DRIVER_PATH" ) )
+  if ( !getenv( "GDAL_DRIVER_PATH" ) )
   {
-    setenv( "GDAL_DRIVER_PATH", gdalPlugins.toUtf8(), 1 );
+    // If the GDAL plugins are bundled with the application and GDAL_DRIVER_PATH
+    // is not already defined, use the GDAL plugins in the application bundle.
+    QString gdalPlugins( QCoreApplication::applicationDirPath().append( "/lib/gdalplugins" ) );
+    if ( QFile::exists( gdalPlugins ) )
+    {
+      setenv( "GDAL_DRIVER_PATH", gdalPlugins.toUtf8(), 1 );
+    }
   }
 
   // Point GDAL_DATA at any GDAL share directory embedded in the app bundle
   if ( !getenv( "GDAL_DATA" ) )
   {
     QStringList gdalShares;
-    QString appResources( QDir::cleanPath( QgsApplication::pkgDataPath() ) );
     gdalShares << QCoreApplication::applicationDirPath().append( "/share/gdal" )
-               << appResources.append( "/share/gdal" )
-               << appResources.append( "/gdal" );
+               << QDir::cleanPath( QgsApplication::pkgDataPath() ).append( "/share/gdal" )
+               << QDir::cleanPath( QgsApplication::pkgDataPath() ).append( "/gdal" );
     const auto constGdalShares = gdalShares;
     for ( const QString &gdalShare : constGdalShares )
     {
@@ -1181,6 +1224,15 @@ int main( int argc, char *argv[] )
         setenv( "GDAL_DATA", gdalShare.toUtf8().constData(), 1 );
         break;
       }
+    }
+  }
+
+  // Point PYTHONHOME to embedded interpreter if present in the bundle
+  if ( !getenv( "PYTHONHOME" ) )
+  {
+    if ( QFile::exists( QCoreApplication::applicationDirPath().append( "/bin/python3" ) ) )
+    {
+      setenv( "PYTHONHOME", QCoreApplication::applicationDirPath().toUtf8().constData(), 1 );
     }
   }
 #endif
@@ -1339,6 +1391,9 @@ int main( int argc, char *argv[] )
   /////////////////////////////////////////////////////////////////////
   if ( ! sProjectFileName.isEmpty() )
   {
+    // in case the project contains broken layers, interactive
+    // "Handle Bad Layers" is displayed that could be blocked by splash screen
+    mypSplash->hide();
     qgis->openProject( sProjectFileName );
   }
 
@@ -1494,13 +1549,28 @@ int main( int argc, char *argv[] )
       dxfFile.setFileName( dxfOutputFile );
     }
 
-    int res = dxfExport.writeToFile( &dxfFile, dxfEncoding );
-    if ( res )
-      std::cerr << "dxf output failed with error code " << res << std::endl;
+    QgsDxfExport::ExportResult res = dxfExport.writeToFile( &dxfFile, dxfEncoding );
+    switch ( res )
+    {
+      case QgsDxfExport::ExportResult::Success:
+        break;
+
+      case QgsDxfExport::ExportResult::DeviceNotWritableError:
+        std::cerr << "dxf output failed, the device is not wriable" << std::endl;
+        break;
+
+      case QgsDxfExport::ExportResult::InvalidDeviceError:
+        std::cerr << "dxf output failed, the device is invalid" << std::endl;
+        break;
+
+      case QgsDxfExport::ExportResult::EmptyExtentError:
+        std::cerr << "dxf output failed, the extent could not be determined" << std::endl;
+        break;
+    }
 
     delete qgis;
 
-    return res;
+    return static_cast<int>( res );
   }
 
   // make sure we don't have a dirty blank project after launch

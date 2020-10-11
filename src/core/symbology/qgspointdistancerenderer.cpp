@@ -238,7 +238,7 @@ QgsFeatureRenderer::Capabilities QgsPointDistanceRenderer::capabilities()
 {
   if ( !mRenderer )
   {
-    return nullptr;
+    return Capabilities();
   }
   return mRenderer->capabilities();
 }
@@ -373,14 +373,14 @@ void QgsPointDistanceRenderer::printGroupInfo() const
 {
 #ifdef QGISDEBUG
   int nGroups = mClusteredGroups.size();
-  QgsDebugMsg( "number of displacement groups:" + QString::number( nGroups ) );
+  QgsDebugMsgLevel( "number of displacement groups:" + QString::number( nGroups ), 3 );
   for ( int i = 0; i < nGroups; ++i )
   {
-    QgsDebugMsg( "***************displacement group " + QString::number( i ) );
+    QgsDebugMsgLevel( "***************displacement group " + QString::number( i ), 3 );
     const auto constAt = mClusteredGroups.at( i );
     for ( const GroupedFeature &feature : constAt )
     {
-      QgsDebugMsg( FID_TO_STRING( feature.feature.id() ) );
+      QgsDebugMsgLevel( FID_TO_STRING( feature.feature.id() ), 3 );
     }
   }
 #endif
@@ -428,7 +428,11 @@ void QgsPointDistanceRenderer::drawLabels( QPointF centerPoint, QgsSymbolRenderC
     currentLabelShift = *labelPosIt;
     if ( currentLabelShift.x() < 0 )
     {
+#if QT_VERSION < QT_VERSION_CHECK(5, 11, 0)
       currentLabelShift.setX( currentLabelShift.x() - fontMetrics.width( groupIt->label ) );
+#else
+      currentLabelShift.setX( currentLabelShift.x() - fontMetrics.horizontalAdvance( groupIt->label ) );
+#endif
     }
     if ( currentLabelShift.y() > 0 )
     {
@@ -436,10 +440,9 @@ void QgsPointDistanceRenderer::drawLabels( QPointF centerPoint, QgsSymbolRenderC
     }
 
     QPointF drawingPoint( centerPoint + currentLabelShift );
-    p->save();
+    QgsScopedQPainterState painterState( p );
     p->translate( drawingPoint.x(), drawingPoint.y() );
     p->drawText( QPointF( 0, 0 ), groupIt->label );
-    p->restore();
   }
 }
 

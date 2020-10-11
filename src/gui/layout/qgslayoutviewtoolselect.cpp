@@ -19,6 +19,8 @@
 #include "qgslayout.h"
 #include "qgslayoutitempage.h"
 #include "qgslayoutmousehandles.h"
+#include "qgslayoutitemgroup.h"
+
 
 QgsLayoutViewToolSelect::QgsLayoutViewToolSelect( QgsLayoutView *view )
   : QgsLayoutViewTool( view, tr( "Select" ) )
@@ -103,12 +105,21 @@ void QgsLayoutViewToolSelect::layoutPressEvent( QgsLayoutViewMouseEvent *event )
     selectedItem = layout()->layoutItemAt( event->layoutPoint(), true );
   }
 
+  // if selected item is in a group, we actually get the top-level group it's part of
+  QgsLayoutItemGroup *group = selectedItem ? selectedItem->parentGroup() : nullptr;
+  while ( group && group->parentGroup() )
+  {
+    group = group->parentGroup();
+  }
+  if ( group )
+    selectedItem = group;
+
   if ( !selectedItem )
   {
     //not clicking over an item, so start marquee selection
     mIsSelecting = true;
     mMousePressStartPos = event->pos();
-    mRubberBand->start( event->layoutPoint(), nullptr );
+    mRubberBand->start( event->layoutPoint(), Qt::KeyboardModifiers() );
     return;
   }
 
@@ -148,7 +159,7 @@ void QgsLayoutViewToolSelect::layoutMoveEvent( QgsLayoutViewMouseEvent *event )
 {
   if ( mIsSelecting )
   {
-    mRubberBand->update( event->layoutPoint(), nullptr );
+    mRubberBand->update( event->layoutPoint(), Qt::KeyboardModifiers() );
   }
   else
   {
@@ -173,7 +184,9 @@ void QgsLayoutViewToolSelect::layoutReleaseEvent( QgsLayoutViewMouseEvent *event
   mIsSelecting = false;
   bool wasClick = !isClickAndDrag( mMousePressStartPos, event->pos() );
 
-  QRectF rect = mRubberBand->finish( event->layoutPoint(), event->modifiers() );
+  // important -- we don't pass the event modifiers here, because we use them for a different meaning!
+  // (modifying how the selection interacts with the items, rather than modifying the selection shape)
+  QRectF rect = mRubberBand->finish( event->layoutPoint() );
 
   bool subtractingSelection = false;
   if ( event->modifiers() & Qt::ShiftModifier )

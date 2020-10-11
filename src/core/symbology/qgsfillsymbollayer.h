@@ -49,6 +49,11 @@ class CORE_EXPORT QgsSimpleFillSymbolLayer : public QgsFillSymbolLayer
 
     // static stuff
 
+    /**
+     * Creates a new QgsSimpleFillSymbolLayer using the specified \a properties map containing symbol properties (see properties()).
+     *
+     * Caller takes ownership of the returned symbol layer.
+     */
     static QgsSymbolLayer *create( const QgsStringMap &properties = QgsStringMap() ) SIP_FACTORY;
     static QgsSymbolLayer *createFromSld( QDomElement &element ) SIP_FACTORY;
 
@@ -60,7 +65,7 @@ class CORE_EXPORT QgsSimpleFillSymbolLayer : public QgsFillSymbolLayer
 
     void stopRender( QgsSymbolRenderContext &context ) override;
 
-    void renderPolygon( const QPolygonF &points, QList<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
+    void renderPolygon( const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
 
     QgsStringMap properties() const override;
 
@@ -88,7 +93,24 @@ class CORE_EXPORT QgsSimpleFillSymbolLayer : public QgsFillSymbolLayer
     Qt::PenJoinStyle penJoinStyle() const { return mPenJoinStyle; }
     void setPenJoinStyle( Qt::PenJoinStyle style ) { mPenJoinStyle = style; }
 
+    /**
+     * Sets an \a offset by which polygons will be translated during rendering.
+     *
+     * Units are specified by offsetUnit().
+     *
+     * \see offset()
+     * \see setOffsetUnit()
+     */
     void setOffset( QPointF offset ) { mOffset = offset; }
+
+    /**
+     * Returns the offset by which polygons will be translated during rendering.
+     *
+     * Units are specified by offsetUnit().
+     *
+     * \see setOffset()
+     * \see offsetUnit()
+     */
     QPointF offset() { return mOffset; }
 
     /**
@@ -108,8 +130,8 @@ class CORE_EXPORT QgsSimpleFillSymbolLayer : public QgsFillSymbolLayer
     const QgsMapUnitScale &strokeWidthMapUnitScale() const { return mStrokeWidthMapUnitScale; }
 
     /**
-     * Sets the units for the fill's offset.
-     * \param unit offset units
+     * Sets the \a unit for the fill's offset.
+     * \see offset()
      * \see offsetUnit()
     */
     void setOffsetUnit( QgsUnitTypes::RenderUnit unit ) { mOffsetUnit = unit; }
@@ -117,10 +139,22 @@ class CORE_EXPORT QgsSimpleFillSymbolLayer : public QgsFillSymbolLayer
     /**
      * Returns the units for the fill's offset.
      * \see setOffsetUnit()
+     * \see offset()
     */
     QgsUnitTypes::RenderUnit offsetUnit() const { return mOffsetUnit; }
 
+    /**
+     * Sets the map unit \a scale for the fill's offset.
+     * \see setOffset()
+     * \see offsetMapUnitScale()
+    */
     void setOffsetMapUnitScale( const QgsMapUnitScale &scale ) { mOffsetMapUnitScale = scale; }
+
+    /**
+     * Returns the map unit scale for the fill's offset.
+     * \see offset()
+     * \see setOffsetMapUnitScale()
+    */
     const QgsMapUnitScale &offsetMapUnitScale() const { return mOffsetMapUnitScale; }
 
     void setOutputUnit( QgsUnitTypes::RenderUnit unit ) override;
@@ -209,6 +243,11 @@ class CORE_EXPORT QgsGradientFillSymbolLayer : public QgsFillSymbolLayer
 
     // static stuff
 
+    /**
+     * Creates a new QgsGradientFillSymbolLayer using the specified \a properties map containing symbol properties (see properties()).
+     *
+     * Caller takes ownership of the returned symbol layer.
+     */
     static QgsSymbolLayer *create( const QgsStringMap &properties = QgsStringMap() ) SIP_FACTORY;
 
     // implemented from base classes
@@ -219,7 +258,7 @@ class CORE_EXPORT QgsGradientFillSymbolLayer : public QgsFillSymbolLayer
 
     void stopRender( QgsSymbolRenderContext &context ) override;
 
-    void renderPolygon( const QPolygonF &points, QList<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
+    void renderPolygon( const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
 
     QgsStringMap properties() const override;
 
@@ -280,15 +319,52 @@ class CORE_EXPORT QgsGradientFillSymbolLayer : public QgsFillSymbolLayer
     void setReferencePoint2IsCentroid( bool isCentroid ) { mReferencePoint2IsCentroid = isCentroid; }
     bool referencePoint2IsCentroid() const { return mReferencePoint2IsCentroid; }
 
-    //! Offset for gradient fill
+    /**
+     * Sets an \a offset by which polygons will be translated during rendering.
+     *
+     * Units are specified by offsetUnit().
+     *
+     * \see offset()
+     * \see setOffsetUnit()
+     */
     void setOffset( QPointF offset ) { mOffset = offset; }
+
+    /**
+     * Returns the offset by which polygons will be translated during rendering.
+     *
+     * Units are specified by offsetUnit().
+     *
+     * \see setOffset()
+     * \see offsetUnit()
+     */
     QPointF offset() const { return mOffset; }
 
-    //! Units for gradient fill offset
+    /**
+     * Sets the \a unit for the fill's offset.
+     * \see offset()
+     * \see offsetUnit()
+    */
     void setOffsetUnit( QgsUnitTypes::RenderUnit unit ) { mOffsetUnit = unit; }
+
+    /**
+     * Returns the units for the fill's offset.
+     * \see setOffsetUnit()
+     * \see offset()
+    */
     QgsUnitTypes::RenderUnit offsetUnit() const { return mOffsetUnit; }
 
+    /**
+     * Sets the map unit \a scale for the fill's offset.
+     * \see setOffset()
+     * \see offsetMapUnitScale()
+    */
     void setOffsetMapUnitScale( const QgsMapUnitScale &scale ) { mOffsetMapUnitScale = scale; }
+
+    /**
+     * Returns the map unit scale for the fill's offset.
+     * \see offset()
+     * \see setOffsetMapUnitScale()
+    */
     const QgsMapUnitScale &offsetMapUnitScale() const { return mOffsetMapUnitScale; }
 
     void setOutputUnit( QgsUnitTypes::RenderUnit unit ) override;
@@ -366,6 +442,11 @@ class CORE_EXPORT QgsShapeburstFillSymbolLayer : public QgsFillSymbolLayer
 
     // static stuff
 
+    /**
+     * Creates a new QgsShapeburstFillSymbolLayer using the specified \a properties map containing symbol properties (see properties()).
+     *
+     * Caller takes ownership of the returned symbol layer.
+     */
     static QgsSymbolLayer *create( const QgsStringMap &properties = QgsStringMap() ) SIP_FACTORY;
 
     // implemented from base classes
@@ -376,7 +457,7 @@ class CORE_EXPORT QgsShapeburstFillSymbolLayer : public QgsFillSymbolLayer
 
     void stopRender( QgsSymbolRenderContext &context ) override;
 
-    void renderPolygon( const QPolygonF &points, QList<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
+    void renderPolygon( const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
 
     QgsStringMap properties() const override;
 
@@ -627,13 +708,14 @@ class CORE_EXPORT QgsShapeburstFillSymbolLayer : public QgsFillSymbolLayer
 
 /**
  * \ingroup core
- * Base class for polygon renderers generating texture images*/
+ * Base class for polygon renderers generating texture images
+*/
 class CORE_EXPORT QgsImageFillSymbolLayer: public QgsFillSymbolLayer
 {
   public:
 
     QgsImageFillSymbolLayer();
-    void renderPolygon( const QPolygonF &points, QList<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
+    void renderPolygon( const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
 
     QgsSymbol *subSymbol() override { return mStroke.get(); }
     bool setSubSymbol( QgsSymbol *symbol SIP_TRANSFER ) override;
@@ -695,6 +777,13 @@ class CORE_EXPORT QgsImageFillSymbolLayer: public QgsFillSymbolLayer
 
     virtual void applyDataDefinedSettings( QgsSymbolRenderContext &context ) { Q_UNUSED( context ) }
 
+    /**
+     * Returns TRUE if the image brush should be transformed using the render context's texture origin.
+     *
+     * \since QGIS 3.16
+     */
+    virtual bool applyBrushTransformFromContext() const;
+
   private:
 #ifdef SIP_RUN
     QgsImageFillSymbolLayer( const QgsImageFillSymbolLayer &other );
@@ -739,7 +828,7 @@ class CORE_EXPORT QgsRasterFillSymbolLayer: public QgsImageFillSymbolLayer
 
     // implemented from base classes
     QString layerType() const override;
-    void renderPolygon( const QPolygonF &points, QList<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
+    void renderPolygon( const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
     void startRender( QgsSymbolRenderContext &context ) override;
     void stopRender( QgsSymbolRenderContext &context ) override;
     QgsStringMap properties() const override;
@@ -907,7 +996,7 @@ class CORE_EXPORT QgsRasterFillSymbolLayer: public QgsImageFillSymbolLayer
   protected:
 
     void applyDataDefinedSettings( QgsSymbolRenderContext &context ) override;
-
+    bool applyBrushTransformFromContext() const override;
   private:
 
     //! Path to the image file
@@ -978,6 +1067,7 @@ class CORE_EXPORT QgsSVGFillSymbolLayer: public QgsImageFillSymbolLayer
      * Sets the path to the SVG file to render in the fill.
      *
      * This is usually an absolute file path. Other supported options include
+     *
      * - relative paths to folders from the user's SVG search paths
      * - base64 encoded content, prefixed with a 'base64:' string
      * - http(s) paths
@@ -1452,14 +1542,19 @@ class CORE_EXPORT QgsPointPatternFillSymbolLayer: public QgsImageFillSymbolLayer
     QgsPointPatternFillSymbolLayer();
     ~QgsPointPatternFillSymbolLayer() override;
 
+    /**
+     * Creates a new QgsPointPatternFillSymbolLayer using the specified \a properties map containing symbol properties (see properties()).
+     *
+     * Caller takes ownership of the returned symbol layer.
+     */
     static QgsSymbolLayer *create( const QgsStringMap &properties = QgsStringMap() ) SIP_FACTORY;
     static QgsSymbolLayer *createFromSld( QDomElement &element ) SIP_FACTORY;
 
     QString layerType() const override;
 
     void startRender( QgsSymbolRenderContext &context ) override;
-
     void stopRender( QgsSymbolRenderContext &context ) override;
+    void renderPolygon( const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
 
     QgsStringMap properties() const override;
 
@@ -1700,7 +1795,202 @@ class CORE_EXPORT QgsPointPatternFillSymbolLayer: public QgsImageFillSymbolLayer
 
     void applyPattern( const QgsSymbolRenderContext &context, QBrush &brush, double distanceX, double distanceY,
                        double displacementX, double displacementY, double offsetX, double offsetY );
+
+    bool mRenderUsingMarkers = false;
 };
+
+/**
+ * \ingroup core
+ * \class QgsRandomMarkerFillSymbolLayer
+ *
+ * A fill symbol layer which places markers at random locations within polygons.
+ *
+ * \since QGIS 3.12
+ */
+class CORE_EXPORT QgsRandomMarkerFillSymbolLayer : public QgsFillSymbolLayer
+{
+  public:
+
+    //! Methods to define the number of points randomly filling the polygon
+    enum CountMethod
+    {
+      AbsoluteCount, //!< The point count is used as an absolute count of markers
+      DensityBasedCount, //!< The point count is part of a marker density count
+    };
+
+    /**
+     * Constructor for QgsRandomMarkerFillSymbolLayer, with the specified \a pointCount.
+     *
+     * Optionally a specific random number \a seed can be used when generating points. A \a seed of 0 indicates that
+     * a truly random sequence will be used on every rendering, causing points to appear in different locations with every map refresh.
+     */
+    QgsRandomMarkerFillSymbolLayer( int pointCount = 10, CountMethod method = AbsoluteCount, double densityArea = 250.0, unsigned long seed = 0 );
+
+    /**
+     * Creates a new QgsRandomMarkerFillSymbolLayer using the specified \a properties map containing symbol properties (see properties()).
+     *
+     * Caller takes ownership of the returned symbol layer.
+     */
+    static QgsSymbolLayer *create( const QgsStringMap &properties = QgsStringMap() ) SIP_FACTORY;
+
+    QString layerType() const override;
+    void startRender( QgsSymbolRenderContext &context ) override;
+    void stopRender( QgsSymbolRenderContext &context ) override;
+    void renderPolygon( const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
+    QgsStringMap properties() const override;
+    QgsRandomMarkerFillSymbolLayer *clone() const override SIP_FACTORY;
+
+    void setColor( const QColor &color ) override;
+    QColor color() const override;
+
+    QgsSymbol *subSymbol() override;
+    bool setSubSymbol( QgsSymbol *symbol SIP_TRANSFER ) override;
+
+    void setOutputUnit( QgsUnitTypes::RenderUnit unit ) override;
+    QgsUnitTypes::RenderUnit outputUnit() const override;
+
+    void setMapUnitScale( const QgsMapUnitScale &scale ) override;
+    QgsMapUnitScale mapUnitScale() const override;
+
+    QSet<QString> usedAttributes( const QgsRenderContext &context ) const override;
+    bool hasDataDefinedProperties() const override;
+
+    /**
+     * Returns the count of random points to render in the fill.
+     *
+     * \see setPointCount()
+     */
+    int pointCount() const;
+
+    /**
+     * Sets the \a count of random points to render in the fill.
+     *
+     * \see pointCount()
+     */
+    void setPointCount( int count );
+
+    /**
+     * Returns the random number seed to use when generating points, or 0 if
+     * a truly random sequence will be used (causing points to appear in different locations with every map refresh).
+     * \see setSeed()
+     */
+    unsigned long seed() const;
+
+    /**
+     * Sets the random number \a seed to use when generating points, or 0 if
+     * a truly random sequence will be used on every rendering (causing points to appear
+     * in different locations with every map refresh).
+     *
+     * \see seed()
+     */
+    void setSeed( unsigned long seed );
+
+    /**
+     * Returns TRUE if point markers should be clipped to the polygon boundary.
+     *
+     * \see setClipPoints()
+     */
+    bool clipPoints() const;
+
+    /**
+     * Sets whether point markers should be \a clipped to the polygon boundary.
+     *
+     * \see clipPoints()
+     */
+    void setClipPoints( bool clipped );
+
+    /**
+     * Returns the count method used to randomly fill the polygon.
+     *
+     * \see setCountMethod()
+     */
+    CountMethod countMethod() const;
+
+    /**
+     * Sets the count \a method used to randomly fill the polygon.
+     *
+     * \see countMethod()
+     */
+    void setCountMethod( CountMethod method );
+
+    /**
+     * Returns the density area used to count the number of points to randomly fill the polygon.
+     *
+     * Only used when the count method is set to QgsRandomMarkerFillSymbolLayer::DensityBasedCount.
+     *
+     * Units are specified by setDensityAreaUnit().
+     *
+     * \see setDensityArea()
+     */
+    double densityArea() const;
+
+    /**
+     * Sets the density \a area used to count the number of points to randomly fill the polygon.
+     *
+     * \see densityArea()
+     */
+    void setDensityArea( double area );
+
+    /**
+     * Sets the units for the density area.
+     * \param unit width units
+     * \see densityAreaUnit()
+    */
+    void setDensityAreaUnit( QgsUnitTypes::RenderUnit unit ) { mDensityAreaUnit = unit; }
+
+    /**
+     * Returns the units for the density area.
+     * \see setDensityAreaUnit()
+    */
+    QgsUnitTypes::RenderUnit densityAreaUnit() const { return mDensityAreaUnit; }
+
+    /**
+     * Sets the map scale for the density area.
+     * \param scale density area map unit scale
+     * \see densityAreaUnitScale()
+     * \see setDensityArea()
+     * \see setDensityAreaUnit()
+     */
+    void setDensityAreaUnitScale( const QgsMapUnitScale &scale ) { mDensityAreaUnitScale = scale; }
+
+    /**
+     * Returns the map scale for the density area.
+     * \see setDensityAreaUnitScale()
+     * \see densityArea()
+     * \see densityAreaUnit()
+     */
+    const QgsMapUnitScale &densityAreaUnitScale() const { return mDensityAreaUnitScale; }
+
+    void startFeatureRender( const QgsFeature &feature, QgsRenderContext &context ) override;
+    void stopFeatureRender( const QgsFeature &feature, QgsRenderContext &context ) override;
+
+  private:
+#ifdef SIP_RUN
+    QgsRandomMarkerFillSymbolLayer( const QgsRandomMarkerFillSymbolLayer &other );
+#endif
+
+    struct Part
+    {
+      QPolygonF exterior;
+      QVector<QPolygonF> rings;
+    };
+
+    QVector< Part > mCurrentParts;
+
+    void render( QgsRenderContext &context, const QVector< Part > &parts, const QgsFeature &feature, bool selected );
+
+    std::unique_ptr< QgsMarkerSymbol > mMarker;
+    CountMethod mCountMethod = AbsoluteCount;
+    int mPointCount = 10;
+    double mDensityArea = 250.0;
+    QgsUnitTypes::RenderUnit mDensityAreaUnit = QgsUnitTypes::RenderMillimeters;
+    QgsMapUnitScale mDensityAreaUnitScale;
+    unsigned long mSeed = 0;
+    bool mClipPoints = false;
+
+    bool mRenderingFeature = false;
+};
+
 
 /**
  * \ingroup core
@@ -1713,6 +2003,11 @@ class CORE_EXPORT QgsCentroidFillSymbolLayer : public QgsFillSymbolLayer
 
     // static stuff
 
+    /**
+     * Creates a new QgsCentroidFillSymbolLayer using the specified \a properties map containing symbol properties (see properties()).
+     *
+     * Caller takes ownership of the returned symbol layer.
+     */
     static QgsSymbolLayer *create( const QgsStringMap &properties = QgsStringMap() ) SIP_FACTORY;
     static QgsSymbolLayer *createFromSld( QDomElement &element ) SIP_FACTORY;
 
@@ -1724,7 +2019,7 @@ class CORE_EXPORT QgsCentroidFillSymbolLayer : public QgsFillSymbolLayer
 
     void stopRender( QgsSymbolRenderContext &context ) override;
 
-    void renderPolygon( const QPolygonF &points, QList<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
+    void renderPolygon( const QPolygonF &points, const QVector<QPolygonF> *rings, QgsSymbolRenderContext &context ) override;
 
     QgsStringMap properties() const override;
 
@@ -1752,18 +2047,62 @@ class CORE_EXPORT QgsCentroidFillSymbolLayer : public QgsFillSymbolLayer
 
     /**
      * Sets whether a point is drawn for all parts or only on the biggest part of multi-part features.
-     * \since QGIS 2.16 */
+     * \see pointOnAllParts()
+     * \since QGIS 2.16
+    */
     void setPointOnAllParts( bool pointOnAllParts ) { mPointOnAllParts = pointOnAllParts; }
 
     /**
      * Returns whether a point is drawn for all parts or only on the biggest part of multi-part features.
-     * \since QGIS 2.16 */
+     * \see setPointOnAllParts()
+     * \since QGIS 2.16
+    */
     bool pointOnAllParts() const { return mPointOnAllParts; }
 
+    /**
+     * Returns TRUE if point markers should be clipped to the polygon boundary.
+     *
+     * \see setClipPoints()
+     * \since 3.14
+     */
+    bool clipPoints() const { return mClipPoints; }
+
+    /**
+     * Sets whether point markers should be \a clipped to the polygon boundary.
+     *
+     * \see clipPoints()
+     * \since 3.14
+     */
+    void setClipPoints( bool clipPoints ) { mClipPoints = clipPoints; }
+
+    /**
+     * Returns TRUE if point markers should be clipped to the current part boundary only.
+     *
+     * \see setClipPoints()
+     * \since 3.14
+     */
+    bool clipOnCurrentPartOnly() const { return mClipOnCurrentPartOnly; }
+
+    /**
+     * Sets whether point markers should be \a clipped to the current part boundary only.
+     *
+     * \see clipOnCurrentPartOnly()
+     * \since 3.14
+     */
+    void setClipOnCurrentPartOnly( bool clipOnCurrentPartOnly ) { mClipOnCurrentPartOnly = clipOnCurrentPartOnly; }
+
+    void startFeatureRender( const QgsFeature &feature, QgsRenderContext &context ) override;
+    void stopFeatureRender( const QgsFeature &feature, QgsRenderContext &context ) override;
+
   protected:
+
     std::unique_ptr< QgsMarkerSymbol > mMarker;
     bool mPointOnSurface = false;
     bool mPointOnAllParts = true;
+    bool mClipPoints = false;
+    bool mClipOnCurrentPartOnly = false;
+
+    bool mRenderingFeature = false;
 
     QgsFeatureId mCurrentFeatureId = -1;
     int mBiggestPartIndex = -1;
@@ -1772,6 +2111,14 @@ class CORE_EXPORT QgsCentroidFillSymbolLayer : public QgsFillSymbolLayer
 #ifdef SIP_RUN
     QgsCentroidFillSymbolLayer( const QgsCentroidFillSymbolLayer &other );
 #endif
+    struct Part
+    {
+      QPolygonF exterior;
+      QVector<QPolygonF> rings;
+    };
+
+    void render( QgsRenderContext &context, const QVector<Part> &parts, const QgsFeature &feature, bool selected );
+    QVector<Part> mCurrentParts;
 };
 
 #endif

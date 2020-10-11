@@ -29,11 +29,12 @@
 #include <tchar.h>
 #endif
 
-QLatin1String QgsOpenClUtils::SETTINGS_GLOBAL_ENABLED_KEY = QLatin1Literal( "OpenClEnabled" );
-QLatin1String QgsOpenClUtils::SETTINGS_DEFAULT_DEVICE_KEY = QLatin1Literal( "OpenClDefaultDevice" );
-QLatin1String QgsOpenClUtils::LOGMESSAGE_TAG = QLatin1Literal( "OpenCL" );
+QLatin1String QgsOpenClUtils::SETTINGS_GLOBAL_ENABLED_KEY = QLatin1String( "OpenClEnabled" );
+QLatin1String QgsOpenClUtils::SETTINGS_DEFAULT_DEVICE_KEY = QLatin1String( "OpenClDefaultDevice" );
+QLatin1String QgsOpenClUtils::LOGMESSAGE_TAG = QLatin1String( "OpenCL" );
 bool QgsOpenClUtils::sAvailable = false;
-QString QgsOpenClUtils::sSourcePath = QString();
+
+Q_GLOBAL_STATIC( QString, sSourcePath )
 
 
 const std::vector<cl::Device> QgsOpenClUtils::devices()
@@ -194,12 +195,12 @@ void QgsOpenClUtils::init()
 
 QString QgsOpenClUtils::sourcePath()
 {
-  return sSourcePath;
+  return *sSourcePath();
 }
 
 void QgsOpenClUtils::setSourcePath( const QString &value )
 {
-  sSourcePath = value;
+  *sSourcePath() = value;
 }
 
 QString QgsOpenClUtils::activeDeviceInfo( const QgsOpenClUtils::Info infoType )
@@ -656,13 +657,13 @@ cl::Program QgsOpenClUtils::buildProgram( const QString &source, QgsOpenClUtils:
     float version( QgsOpenClUtils::activePlatformVersion().toFloat( &ok ) );
     if ( ok && version < 2.0f )
     {
-      program.build( QStringLiteral( "-cl-std=CL%1 -I%2" )
+      program.build( QStringLiteral( "-cl-std=CL%1 -I\"%2\"" )
                      .arg( QgsOpenClUtils::activePlatformVersion( ) )
                      .arg( sourcePath() ).toStdString().c_str() );
     }
     else
     {
-      program.build( QStringLiteral( "-I%1" )
+      program.build( QStringLiteral( "-I\"%1\"" )
                      .arg( sourcePath() ).toStdString().c_str() );
     }
   }

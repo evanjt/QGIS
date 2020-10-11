@@ -53,6 +53,7 @@ my $ACTUAL_CLASS = '';
 my $PYTHON_SIGNATURE = '';
 
 my $INDENT = '';
+my $PREV_INDENT = '';
 my $COMMENT = '';
 my $COMMENT_PARAM_LIST = 0;
 my $COMMENT_LAST_LINE_NOTE_WARNING = 0;
@@ -184,18 +185,41 @@ sub processDoxygenLine {
     # replace nullptr with None (nullptr means nothing to Python devs)
     $line =~ s/\bnullptr\b/None/g;
 
+    if ( $line =~ m/^\\(?<SUB>sub)?section/) {
+      my $sep = "-";
+      $sep = "~" if defined $+{SUB};
+      $line =~ s/^\\(sub)?section \w+ //;
+      my $sep_line = $line =~ s/[\w ()]/$sep/gr;
+      $line .= "\n".$sep_line;
+    }
+
+    # convert ### style headings
+    if ( $line =~ m/^###\s+(.*)$/) {
+      $line = "$1\n".('-' x length($1));
+    }
+    if ( $line =~ m/^##\s+(.*)$/) {
+      $line = "$1\n".('=' x length($1));
+    }
+
     if ( $line eq '*' ) {
         $line = '';
     }
 
-    # if inside multi-line parameter, ensure additional lines are indented
+    # handle multi-line parameters/returns/lists
     if ($line ne '') {
-        if ( $line !~ m/^\s*[\\:]+(param|note|since|return|deprecated|warning|throws)/ ) {
+        if ( $line =~ m/^\s*[\-#]/ ){
+            # start of a list item, ensure following lines are correctly indented
+            $line = "$PREV_INDENT$line";
+            $INDENT = $PREV_INDENT."  ";
+        }
+        elsif ( $line !~ m/^\s*[\\:]+(param|note|since|return|deprecated|warning|throws)/ ) {
+            # if inside multi-line parameter, ensure additional lines are indented
             $line = "$INDENT$line";
         }
     }
     else
     {
+        $PREV_INDENT = $INDENT;
         $INDENT = '';
     }
     # replace \returns with :return:
@@ -234,17 +258,23 @@ sub processDoxygenLine {
     }
 
     if ( $line =~ m/[\\@](ingroup|class)/ ) {
+        $PREV_INDENT = $INDENT;
         $INDENT = '';
         return "";
     }
     if ( $line =~ m/\\since .*?([\d\.]+)/i ) {
+        $PREV_INDENT = $INDENT;
         $INDENT = '';
         $FOUND_SINCE = 1;
         return "\n.. versionadded:: $1\n";
     }
-    if ( $line =~ m/\\deprecated(.*)/i ) {
+    if ( $line =~ m/\\deprecated(?:\s+since\s+(?:QGIS\s+)(?<DEPR_VERSION>[0-9.]+)(,\s*)?)?(?<DEPR_MESSAGE>.*)?/i ) {
+        $PREV_INDENT = $INDENT;
         $INDENT = '';
-        return "\n.. deprecated::$1\n";
+        my $depr_line = "\n.. deprecated::";
+        $depr_line .= " QGIS $+{DEPR_VERSION}" if (defined $+{DEPR_VERSION});
+        $depr_line .= "\n  $+{DEPR_MESSAGE}\n" if (defined $+{DEPR_MESSAGE});
+        return $depr_line;
     }
 
     # create links in see also
@@ -286,20 +316,29 @@ sub processDoxygenLine {
                 $line =~ s/\b(Qgs[A-Z]\w+)\b(\.?$|[^\w]{2})/:py:class:`$1`$2/g;
             }
         }
-        $line =~ s/\b(Qgs[A-Z]\w+\.[a-z]\w+\(\))(\.|\b|$)/:py:func:`$1`/g;
+        $line =~ s/\b(Qgs[A-Z]\w+\.[a-z]\w+\(\))(?!\w)/:py:func:`$1`/g;
+        if ( defined $ACTUAL_CLASS && $ACTUAL_CLASS) {
+          $line =~ s/(?<!\.)\b(?:([a-z]\w+)\(\))(?!\w)/:py:func:`~$ACTUAL_CLASS.$1`/g;
+        }
+        else {
+          $line =~ s/(?<!\.)\b(?:([a-z]\w+)\(\))(?!\w)/:py:func:`~$1`/g;
+        }
     }
 
     if ( $line =~ m/[\\@]note (.*)/ ) {
         $COMMENT_LAST_LINE_NOTE_WARNING = 1;
+        $PREV_INDENT = $INDENT;
         $INDENT = '';
         return "\n.. note::\n\n   $1\n";
     }
     if ( $line =~ m/[\\@]warning (.*)/ ) {
+        $PREV_INDENT = $INDENT;
         $INDENT = '';
         $COMMENT_LAST_LINE_NOTE_WARNING = 1;
         return "\n.. warning::\n\n   $1\n";
     }
     if ( $line =~ m/[\\@]throws (.+?)\b\s*(.*)/ ) {
+        $PREV_INDENT = $INDENT;
         $INDENT = '';
         $COMMENT_LAST_LINE_NOTE_WARNING = 1;
         return "\n:raises $1: $2\n";
@@ -383,12 +422,18 @@ sub fix_annotations {
 
     # get removed params to be able to drop them out of the API doc
     if ( $line =~ m/(\w+)\s+SIP_PYARGREMOVE/ ){
-      push @SKIPPED_PARAMS_REMOVE, $1;
-      dbg_info("caught removed param: $SKIPPED_PARAMS_REMOVE[$#SKIPPED_PARAMS_REMOVE]");
+      my @removed_params = $line =~ m/(\w+)\s+SIP_PYARGREMOVE/g;
+      foreach ( @removed_params ) {
+        push @SKIPPED_PARAMS_REMOVE, $_;
+        dbg_info("caught removed param: $SKIPPED_PARAMS_REMOVE[$#SKIPPED_PARAMS_REMOVE]");
+      }
     }
     if ( $line =~ m/(\w+)\s+SIP_OUT/ ){
-      push @SKIPPED_PARAMS_OUT, $1;
-      dbg_info("caught removed param: $SKIPPED_PARAMS_OUT[$#SKIPPED_PARAMS_OUT]");
+      my @out_params = $line =~ m/(\w+)\s+SIP_OUT/g;
+      foreach ( @out_params ) {
+        push @SKIPPED_PARAMS_OUT, $_;
+        dbg_info("caught removed param: $SKIPPED_PARAMS_OUT[$#SKIPPED_PARAMS_OUT]");
+      }
     }
 
     # printed annotations
@@ -407,6 +452,7 @@ sub fix_annotations {
     $line =~ s/\bSIP_NODEFAULTCTORS\b/\/NoDefaultCtors\//;
     $line =~ s/\bSIP_OUT\b/\/Out\//g;
     $line =~ s/\bSIP_RELEASEGIL\b/\/ReleaseGIL\//;
+    $line =~ s/\bSIP_HOLDGIL\b/\/HoldGIL\//;    
     $line =~ s/\bSIP_TRANSFER\b/\/Transfer\//g;
     $line =~ s/\bSIP_TRANSFERBACK\b/\/TransferBack\//;
     $line =~ s/\bSIP_TRANSFERTHIS\b/\/TransferThis\//;
@@ -418,9 +464,9 @@ sub fix_annotations {
     $line =~ s/SIP_THROW\(\s*(\w+)\s*\)/throw\( $1 \)/;
 
     # combine multiple annotations
-    # https://regex101.com/r/uvCt4M/4
+    # https://regex101.com/r/uvCt4M/5
     do {no warnings 'uninitialized';
-        $line =~ s/\/([\w,]+(=\w+)?)\/\s*\/([\w,]+(=\w+)?)\//\/$1,$3\//;
+        $line =~ s/\/([\w,]+(=\"?\w+\"?)?)\/\s*\/([\w,]+(=\"?\w+\"?)?)\//\/$1,$3\//;
         (! $3) or dbg_info("combine multiple annotations -- works only for 2");
     };
 
@@ -478,6 +524,7 @@ sub detect_comment_block{
     # dbg_info("detect comment strict:" . $args{strict_mode} );
     $COMMENT_PARAM_LIST = 0;
     $INDENT = '';
+    $PREV_INDENT = '';
     $COMMENT_CODE_SNIPPET = 0;
     $COMMENT_LAST_LINE_NOTE_WARNING = 0;
     $FOUND_SINCE = 0;
@@ -525,6 +572,10 @@ while ($LINE_IDX < $LINE_COUNT){
 
     if ($LINE =~ m/^\s*SIP_FEATURE\( (\w+) \)(.*)$/){
         write_output("SF1", "%Feature $1$2\n");
+        next;
+    }
+    if ($LINE =~ m/^\s*SIP_PROPERTY\((.*)\)$/){
+        write_output("SF1", "%Property($1)\n");
         next;
     }
     if ($LINE =~ m/^\s*SIP_IF_FEATURE\( (\!?\w+) \)(.*)$/){
@@ -943,6 +994,7 @@ while ($LINE_IDX < $LINE_COUNT){
         if ( $LINE =~ m/^\s*\/\// ){
             if ($LINE =~ m/^\s*\/\/\!\s*(.*?)\n?$/){
                 $COMMENT_PARAM_LIST = 0;
+                $PREV_INDENT = $INDENT;
                 $INDENT = '';
                 $COMMENT_LAST_LINE_NOTE_WARNING = 0;
                 $COMMENT = processDoxygenLine( $1 );
@@ -1203,8 +1255,8 @@ while ($LINE_IDX < $LINE_COUNT){
     # multiline definition (parenthesis left open)
     if ( $MULTILINE_DEFINITION != MULTILINE_NO ){
         dbg_info("on multiline");
-        # https://regex101.com/r/DN01iM/2
-        if ( $LINE =~ m/^([^()]+(\((?:[^()]++|(?1))*\)))*[^()]*\)[^()]*$/){
+        # https://regex101.com/r/DN01iM/4
+        if ( $LINE =~ m/^([^()]+(\((?:[^()]++|(?1))*\)))*[^()]*\)([^()](throw\([^()]+\))?)*$/){
             dbg_info("ending multiline");
             # remove potential following body
             if ( $MULTILINE_DEFINITION != MULTILINE_CONDITIONAL_STATEMENT && $LINE !~ m/(\{.*\}|;)\s*(\/\/.*)?$/ ){
@@ -1251,6 +1303,7 @@ while ($LINE_IDX < $LINE_COUNT){
         else {
             dbg_info('writing comment');
             if ( $COMMENT !~ m/^\s*$/ ){
+                dbg_info('comment non-empty');
                 my $doc_prepend = "";
                 $doc_prepend = "\@DOCSTRINGSTEMPLATE\@" if $COMMENT_TEMPLATE_DOCSTRING == 1;
                 write_output("CM1", "$doc_prepend%Docstring\n");
@@ -1259,6 +1312,20 @@ while ($LINE_IDX < $LINE_COUNT){
                 my @out_params = ();
                 my $waiting_for_return_to_end = 0;
                 foreach my $comment_line (@comment_lines) {
+
+                  if ( ( $comment_line =~ m/versionadded:/ || $comment_line =~ m/deprecated:/ ) && $#out_params >= 0 ){
+                    dbg_info('out style parameters remain to flush!');
+                    # member has /Out/ parameters, but no return type, so flush out out_params docs now
+                    my $first_out_param = shift(@out_params);
+                    write_output("CM7", "$doc_prepend:return: - $first_out_param\n");
+
+                    foreach my $out_param (@out_params) {
+                      write_output("CM7", "$doc_prepend         - $out_param\n");
+                    }
+                    write_output("CM7", "$doc_prepend\n");
+                    @out_params = ();
+                  }
+
                   # if ( $RETURN_TYPE ne '' && $comment_line =~ m/^\s*\.\. \w/ ){
                   #     # return type must be added before any other paragraph-level markup
                   #     write_output("CM5", ":rtype: $RETURN_TYPE\n\n");

@@ -167,11 +167,11 @@ class SERVER_EXPORT QgsServerApiException: public QgsServerException
           { "description", what().toStdString() },
         }
       };
-      if ( responseFormat == QStringLiteral( "application/json" ) )
+      if ( responseFormat == QLatin1String( "application/json" ) )
       {
         return QByteArray::fromStdString( data.dump() );
       }
-      else if ( responseFormat == QStringLiteral( "text/html" ) )
+      else if ( responseFormat == QLatin1String( "text/html" ) )
       {
         // TODO: template
         return QByteArray::fromStdString( data.dump() );
@@ -247,6 +247,27 @@ class SERVER_EXPORT QgsServerApiBadRequestException: public QgsServerApiExceptio
     //! Construction
     QgsServerApiBadRequestException( const QString &message, const QString &mimeType = QStringLiteral( "application/json" ), int responseCode = 400 )
       : QgsServerApiException( QStringLiteral( "Bad request error" ), message, mimeType, responseCode )
+    {
+    }
+};
+
+
+/**
+ * \ingroup server
+ * \class  QgsServerApiPermissionDeniedException
+ * \brief Forbidden (permission denied) 403
+ *
+ * Note that this exception is associated with a default return code 403 which may be
+ * not appropriate in some situations.
+ *
+ * \since QGIS 3.12
+ */
+class SERVER_EXPORT QgsServerApiPermissionDeniedException: public QgsServerApiException
+{
+  public:
+    //! Construction
+    QgsServerApiPermissionDeniedException( const QString &message, const QString &mimeType = QStringLiteral( "application/json" ), int responseCode = 403 )
+      : QgsServerApiException( QStringLiteral( "Forbidden" ), message, mimeType, responseCode )
     {
     }
 };

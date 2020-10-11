@@ -13,13 +13,16 @@ __copyright__ = 'Copyright 2016, The QGIS Project'
 import qgis  # NOQA
 
 from qgis.core import (QgsTextBufferSettings,
+                       QgsTextMaskSettings,
                        QgsTextBackgroundSettings,
                        QgsTextShadowSettings,
                        QgsTextFormat,
                        QgsUnitTypes,
                        QgsMapUnitScale,
                        QgsBlurEffect,
-                       QgsMarkerSymbol)
+                       QgsMarkerSymbol,
+                       QgsSymbolLayerReference,
+                       QgsSymbolLayerId)
 from qgis.gui import (QgsTextFormatWidget, QgsTextFormatDialog)
 from qgis.PyQt.QtGui import (QColor, QPainter)
 from qgis.PyQt.QtCore import (Qt, QSizeF, QPointF)
@@ -58,6 +61,32 @@ class PyQgsTextFormatWidget(unittest.TestCase):
         self.assertEqual(s.blendMode(), QPainter.CompositionMode_Difference)
         self.assertTrue(s.paintEffect())
         self.assertEqual(s.paintEffect().blurLevel(), 2.0)
+
+    def createMaskSettings(self):
+        s = QgsTextMaskSettings()
+        s.setEnabled(True)
+        s.setSize(5)
+        s.setSizeUnit(QgsUnitTypes.RenderPixels)
+        s.setSizeMapUnitScale(QgsMapUnitScale(1, 2))
+        s.setOpacity(0.5)
+        s.setJoinStyle(Qt.BevelJoin)
+        s.setPaintEffect(QgsBlurEffect.create({'blur_level': '2.0', 'blur_unit': QgsUnitTypes.encodeUnit(QgsUnitTypes.RenderMillimeters), 'enabled': '1'}))
+        s.setMaskedSymbolLayers([QgsSymbolLayerReference("layerid1", QgsSymbolLayerId("symbol", 1)),
+                                 QgsSymbolLayerReference("layerid2", QgsSymbolLayerId("symbol2", 2))])
+        return s
+
+    def checkMaskSettings(self, s):
+        """ test QgsTextMaskSettings """
+        self.assertTrue(s.enabled())
+        self.assertEqual(s.size(), 5)
+        self.assertEqual(s.sizeUnit(), QgsUnitTypes.RenderPixels)
+        self.assertEqual(s.sizeMapUnitScale(), QgsMapUnitScale(1, 2))
+        self.assertEqual(s.opacity(), 0.5)
+        self.assertEqual(s.joinStyle(), Qt.BevelJoin)
+        self.assertTrue(s.paintEffect())
+        self.assertEqual(s.paintEffect().blurLevel(), 2.0)
+        self.assertEqual(s.maskedSymbolLayers(), [QgsSymbolLayerReference("layerid1", QgsSymbolLayerId("symbol", 1)),
+                                                  QgsSymbolLayerReference("layerid2", QgsSymbolLayerId("symbol2", 2))])
 
     def createBackgroundSettings(self):
         s = QgsTextBackgroundSettings()
@@ -160,6 +189,7 @@ class PyQgsTextFormatWidget(unittest.TestCase):
     def createFormatSettings(self):
         s = QgsTextFormat()
         s.setBuffer(self.createBufferSettings())
+        s.setMask(self.createMaskSettings())
         s.setBackground(self.createBackgroundSettings())
         s.setShadow(self.createShadowSettings())
         font = getTestFont()
@@ -175,11 +205,13 @@ class PyQgsTextFormatWidget(unittest.TestCase):
         s.setLineHeight(5)
         s.setOrientation(QgsTextFormat.VerticalOrientation)
         s.setPreviewBackgroundColor(QColor(100, 150, 200))
+        s.setAllowHtmlFormatting(True)
         return s
 
     def checkTextFormat(self, s):
         """ test QgsTextFormat """
         self.checkBufferSettings(s.buffer())
+        self.checkMaskSettings(s.mask())
         self.checkShadowSettings(s.shadow())
         self.checkBackgroundSettings(s.background())
         self.assertEqual(s.font().family(), 'QGIS Vera Sans')
@@ -194,6 +226,7 @@ class PyQgsTextFormatWidget(unittest.TestCase):
         self.assertEqual(s.lineHeight(), 5)
         self.assertEqual(s.orientation(), QgsTextFormat.VerticalOrientation)
         self.assertEqual(s.previewBackgroundColor().name(), '#6496c8')
+        self.assertTrue(s.allowHtmlFormatting())
 
     def testSettings(self):
         # test that widget correctly sets and returns matching settings

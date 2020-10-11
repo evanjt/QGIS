@@ -52,16 +52,21 @@ class CORE_EXPORT QgsGeoPackageCollectionItem : public QgsDataCollectionItem
     /**
      * Compacts (VACUUM) a geopackage database
      * \param name DB connection name
+     * \param path DB connection path
      * \param errCause contains the error message
      * \return true on success
      */
-    static bool vacuumGeoPackageDb( const QString &name, QString &errCause );
+    static bool vacuumGeoPackageDb( const QString &name, const QString &path, QString &errCause );
 
     void addConnection();
     void deleteConnection();
 
-  protected:
-    QString mPath;
+
+    // QgsDataItem interface
+  public:
+    bool layerCollection() const override;
+    bool hasDragEnabled() const override;
+    QgsMimeDataUtils::Uri mimeUri() const override;
 };
 
 
@@ -115,7 +120,7 @@ class CORE_EXPORT QgsGeoPackageRasterLayerItem : public QgsGeoPackageAbstractLay
 
 
 
-class CORE_EXPORT QgsGeoPackageVectorLayerItem : public QgsGeoPackageAbstractLayerItem
+class CORE_EXPORT QgsGeoPackageVectorLayerItem final: public QgsGeoPackageAbstractLayerItem
 {
     Q_OBJECT
 
@@ -123,13 +128,15 @@ class CORE_EXPORT QgsGeoPackageVectorLayerItem : public QgsGeoPackageAbstractLay
     QgsGeoPackageVectorLayerItem( QgsDataItem *parent, const QString &name, const QString &path, const QString &uri, LayerType layerType );
     bool executeDeleteLayer( QString &errCause ) override;
 
+    // QgsDataItem interface
+    QVector<QgsDataItem *> createChildren() override;
 };
 
 /**
  * \brief The QgsGeoPackageConnectionItem class adds the stored
  *        connection management to QgsGeoPackageCollectionItem
  */
-class CORE_EXPORT QgsGeoPackageConnectionItem : public QgsGeoPackageCollectionItem
+class CORE_EXPORT QgsGeoPackageConnectionItem final: public QgsGeoPackageCollectionItem
 {
     Q_OBJECT
 
@@ -139,7 +146,7 @@ class CORE_EXPORT QgsGeoPackageConnectionItem : public QgsGeoPackageCollectionIt
 };
 
 
-class CORE_EXPORT QgsGeoPackageRootItem : public QgsDataCollectionItem
+class CORE_EXPORT QgsGeoPackageRootItem final: public QgsConnectionsRootItem
 {
     Q_OBJECT
 
@@ -157,10 +164,11 @@ class CORE_EXPORT QgsGeoPackageRootItem : public QgsDataCollectionItem
 
 
 //! Provider for geopackage data item
-class QgsGeoPackageDataItemProvider : public QgsDataItemProvider
+class QgsGeoPackageDataItemProvider final: public QgsDataItemProvider
 {
   public:
     QString name() override;
+    QString dataProviderKey() const override;
     int capabilities() const override;
     QgsDataItem *createDataItem( const QString &path, QgsDataItem *parentItem ) override;
 };

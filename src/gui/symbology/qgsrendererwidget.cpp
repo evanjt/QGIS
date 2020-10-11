@@ -26,6 +26,7 @@
 #include "qgsproject.h"
 #include "qgsexpressioncontextutils.h"
 #include "qgssymbollayerutils.h"
+#include "qgstemporalcontroller.h"
 
 #include <QMessageBox>
 #include <QInputDialog>
@@ -320,7 +321,7 @@ void QgsRendererWidget::showSymbolLevelsDialog( QgsFeatureRenderer *r )
     QgsSymbolLevelsWidget *widget = new QgsSymbolLevelsWidget( r, r->usingSymbolLevels(), panel );
     widget->setPanelTitle( tr( "Symbol Levels" ) );
     connect( widget, &QgsPanelWidget::widgetChanged, widget, &QgsSymbolLevelsWidget::apply );
-    connect( widget, &QgsPanelWidget::widgetChanged, [ = ]() { emit widgetChanged(); emit symbolLevelsChanged(); } );
+    connect( widget, &QgsPanelWidget::widgetChanged, this, [ = ]() { emit widgetChanged(); emit symbolLevelsChanged(); } );
     panel->openPanel( widget );
     return;
   }
@@ -346,6 +347,19 @@ QgsSymbolWidgetContext QgsRendererWidget::context() const
 void QgsRendererWidget::applyChanges()
 {
   apply();
+}
+
+void QgsRendererWidget::setDockMode( bool dockMode )
+{
+  if ( dockMode )
+  {
+    // when in dock mode, these shortcuts conflict with the main window shortcuts and cannot be used
+    if ( mCopyAction )
+      mCopyAction->setShortcut( QKeySequence() );
+    if ( mPasteAction )
+      mPasteAction->setShortcut( QKeySequence() );
+  }
+  QgsPanelWidget::setDockMode( dockMode );
 }
 
 QgsDataDefinedSizeLegendWidget *QgsRendererWidget::createDataDefinedSizeLegendWidget( const QgsMarkerSymbol *symbol, const QgsDataDefinedSizeLegend *ddsLegend )
@@ -393,18 +407,23 @@ QgsExpressionContext QgsDataDefinedValueDialog::createExpressionContext() const
   expContext << QgsExpressionContextUtils::globalScope()
              << QgsExpressionContextUtils::projectScope( QgsProject::instance() )
              << QgsExpressionContextUtils::atlasScope( nullptr );
-  if ( mContext.mapCanvas() )
+  if ( auto *lMapCanvas = mContext.mapCanvas() )
   {
-    expContext << QgsExpressionContextUtils::mapSettingsScope( mContext.mapCanvas()->mapSettings() )
-               << new QgsExpressionContextScope( mContext.mapCanvas()->expressionContextScope() );
+    expContext << QgsExpressionContextUtils::mapSettingsScope( lMapCanvas->mapSettings() )
+               << new QgsExpressionContextScope( lMapCanvas->expressionContextScope() );
+
+    if ( const QgsExpressionContextScopeGenerator *generator = dynamic_cast< const QgsExpressionContextScopeGenerator * >( lMapCanvas->temporalController() ) )
+    {
+      expContext << generator->createExpressionContextScope();
+    }
   }
   else
   {
     expContext << QgsExpressionContextUtils::mapSettingsScope( QgsMapSettings() );
   }
 
-  if ( vectorLayer() )
-    expContext << QgsExpressionContextUtils::layerScope( vectorLayer() );
+  if ( auto *lVectorLayer = vectorLayer() )
+    expContext << QgsExpressionContextUtils::layerScope( lVectorLayer );
 
   // additional scopes
   const auto constAdditionalExpressionContextScopes = mContext.additionalExpressionContextScopes();

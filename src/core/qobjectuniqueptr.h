@@ -23,7 +23,7 @@
 
 #define SIP_NO_FILE
 
-#include <qsharedpointer.h>
+#include <QPointer>
 #include <qtypeinfo.h>
 
 class QVariant;
@@ -52,7 +52,7 @@ class QObjectUniquePtr
       typedef const QObject Type;
     };
     typedef typename TypeSelector<T>::Type QObjectType;
-    QWeakPointer<QObjectType> mPtr;
+    QPointer<QObjectType> mPtr;
   public:
 
     /**
@@ -245,7 +245,7 @@ template<typename T>
 QObjectUniquePtr<T>
 QObjectUniquePtrFromVariant( const QVariant &variant )
 {
-  return QObjectUniquePtr<T>( qobject_cast<T *>( QtSharedPointer::weakPointerFromVariant_internal( variant ).data() ) );
+  return QObjectUniquePtr<T>( qobject_cast<T *>( QtSharedPointer::weakPointerFromVariant_internal( variant ).toStrongRef().data() ) );
 }
 
 #endif // QOBJECTUNIQUEPTR_H

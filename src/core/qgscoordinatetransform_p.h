@@ -102,6 +102,14 @@ class QgsCoordinateTransformPrivate : public QSharedData
 
     ProjData threadLocalProjData();
 
+#if PROJ_VERSION_MAJOR>=6
+    int mAvailableOpCount = -1;
+    ProjData threadLocalFallbackProjData();
+
+    // Only meant to be called by QgsCoordinateTransform::removeFromCacheObjectsBelongingToCurrentThread()
+    bool removeObjectsBelongingToCurrentThread( void *pj_context );
+#endif
+
     /**
      * Flag to indicate whether the transform is valid (ie has a valid
      * source and destination crs)
@@ -126,6 +134,11 @@ class QgsCoordinateTransformPrivate : public QSharedData
     Q_DECL_DEPRECATED int mSourceDatumTransform = -1;
     Q_DECL_DEPRECATED int mDestinationDatumTransform = -1;
     QString mProjCoordinateOperation;
+    bool mShouldReverseCoordinateOperation = false;
+    bool mAllowFallbackTransforms = true;
+
+    //! True if the proj transform corresponds to the reverse direction, and must be flipped when transforming...
+    bool mIsReversed = false;
 
 #if PROJ_VERSION_MAJOR<6
 
@@ -143,6 +156,7 @@ class QgsCoordinateTransformPrivate : public QSharedData
 
     QReadWriteLock mProjLock;
     QMap < uintptr_t, ProjData > mProjProjections;
+    QMap < uintptr_t, ProjData > mProjFallbackProjections;
 
     /**
      * Sets a custom handler to use when a coordinate transform is created between \a sourceCrs and
@@ -221,6 +235,8 @@ class QgsCoordinateTransformPrivate : public QSharedData
     static std::function< void( const QgsCoordinateReferenceSystem &sourceCrs,
                                 const QgsCoordinateReferenceSystem &destinationCrs,
                                 const QgsDatumTransform::TransformDetails &desiredOperation )> sMissingGridUsedByContextHandler;
+
+    QgsCoordinateTransformPrivate &operator= ( const QgsCoordinateTransformPrivate & ) = delete;
 };
 
 /// @endcond

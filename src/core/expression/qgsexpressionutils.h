@@ -188,6 +188,23 @@ class QgsExpressionUtils
       return value.toString();
     }
 
+    /**
+     * Returns an expression value converted to binary (byte array) value.
+     *
+     * An empty byte array will be returned if the value is NULL.
+     *
+     * \since QGIS 3.12
+     */
+    static QByteArray getBinaryValue( const QVariant &value, QgsExpression *parent )
+    {
+      if ( value.type() != QVariant::ByteArray )
+      {
+        parent->setEvalErrorString( QObject::tr( "Value is not a binary value" ) );
+        return QByteArray();
+      }
+      return value.toByteArray();
+    }
+
     static double getDoubleValue( const QVariant &value, QgsExpression *parent )
     {
       bool ok;
@@ -221,7 +238,7 @@ class QgsExpressionUtils
       qlonglong x = value.toLongLong( &ok );
       if ( ok && x >= std::numeric_limits<int>::min() && x <= std::numeric_limits<int>::max() )
       {
-        return x;
+        return static_cast<int>( x );
       }
       else
       {

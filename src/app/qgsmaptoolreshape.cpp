@@ -27,6 +27,7 @@
 QgsMapToolReshape::QgsMapToolReshape( QgsMapCanvas *canvas )
   : QgsMapToolCapture( canvas, QgisApp::instance()->cadDockWidget(), QgsMapToolCapture::CaptureLine )
 {
+  mToolName = tr( "Reshape features" );
 }
 
 void QgsMapToolReshape::cadCanvasReleaseEvent( QgsMapMouseEvent *e )
@@ -88,8 +89,8 @@ bool QgsMapToolReshape::isBindingLine( QgsVectorLayer *vlayer, const QgsRectangl
 
   bool begin = false;
   bool end = false;
-  const QgsPointXY beginPoint = points().first();
-  const QgsPointXY endPoint = points().last();
+  const QgsPointXY beginPoint = pointsZM().first();
+  const QgsPointXY endPoint = pointsZM().last();
 
   QgsFeatureIterator fit = vlayer->getFeatures( QgsFeatureRequest().setFilterRect( bbox ).setNoAttributes() );
   QgsFeature f;
@@ -114,16 +115,15 @@ bool QgsMapToolReshape::isBindingLine( QgsVectorLayer *vlayer, const QgsRectangl
 
 void QgsMapToolReshape::reshape( QgsVectorLayer *vlayer )
 {
-  QgsPointXY firstPoint = points().at( 0 );
+  QgsPointXY firstPoint = pointsZM().at( 0 );
   QgsRectangle bbox( firstPoint.x(), firstPoint.y(), firstPoint.x(), firstPoint.y() );
   for ( int i = 1; i < size(); ++i )
   {
-    bbox.combineExtentWith( points().at( i ).x(), points().at( i ).y() );
+    bbox.combineExtentWith( pointsZM().at( i ).x(), pointsZM().at( i ).y() );
   }
 
 
   QgsPointSequence pts;
-  QVector<QgsPoint> points;
   captureCurve()->points( pts );
   QgsLineString reshapeLineString( pts );
 
@@ -158,12 +158,27 @@ void QgsMapToolReshape::reshape( QgsVectorLayer *vlayer )
           QHash<QgsVectorLayer *, QSet<QgsFeatureId> > ignoreFeatures;
           ignoreFeatures.insert( vlayer, vlayer->allFeatureIds() );
 
-          if ( geom.avoidIntersections( QgsProject::instance()->avoidIntersectionsLayers(), ignoreFeatures ) != 0 )
+          QList<QgsVectorLayer *>  avoidIntersectionsLayers;
+          switch ( QgsProject::instance()->avoidIntersectionsMode() )
           {
-            emit messageEmitted( tr( "An error was reported during intersection removal" ), Qgis::Critical );
-            vlayer->destroyEditCommand();
-            stopCapturing();
-            return;
+            case QgsProject::AvoidIntersectionsMode::AvoidIntersectionsCurrentLayer:
+              avoidIntersectionsLayers.append( vlayer );
+              break;
+            case QgsProject::AvoidIntersectionsMode::AvoidIntersectionsLayers:
+              avoidIntersectionsLayers = QgsProject::instance()->avoidIntersectionsLayers();
+              break;
+            case QgsProject::AvoidIntersectionsMode::AllowIntersections:
+              break;
+          }
+          if ( avoidIntersectionsLayers.size() > 0 )
+          {
+            if ( geom.avoidIntersections( QgsProject::instance()->avoidIntersectionsLayers(), ignoreFeatures ) != 0 )
+            {
+              emit messageEmitted( tr( "An error was reported during intersection removal" ), Qgis::Critical );
+              vlayer->destroyEditCommand();
+              stopCapturing();
+              return;
+            }
           }
 
           if ( geom.isEmpty() ) //intersection removal might have removed the whole geometry

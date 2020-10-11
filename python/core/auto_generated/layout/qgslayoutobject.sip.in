@@ -146,6 +146,14 @@ A base class for objects which belong to a layout.
       MapGridLabelDistance,
       MapGridCrossSize,
       MapGridFrameLineThickness,
+      MapGridAnnotationDisplayLeft,
+      MapGridAnnotationDisplayRight,
+      MapGridAnnotationDisplayTop,
+      MapGridAnnotationDisplayBottom,
+      MapGridFrameDivisionsLeft,
+      MapGridFrameDivisionsRight,
+      MapGridFrameDivisionsTop,
+      MapGridFrameDivisionsBottom,
       //composer picture
       PictureSource,
       PictureSvgBackgroundColor,
@@ -163,6 +171,9 @@ A base class for objects which belong to a layout.
       ScalebarLineWidth,
       //table item
       AttributeTableSourceLayer,
+      MapCrs,
+      StartDateTime,
+      EndDateTime,
     };
 
     enum PropertyValueType

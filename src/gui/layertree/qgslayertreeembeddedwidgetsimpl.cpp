@@ -32,10 +32,14 @@ QgsLayerTreeOpacityWidget::QgsLayerTreeOpacityWidget( QgsMapLayer *layer )
   : mLayer( layer )
 {
   setAutoFillBackground( true ); // override the content from model
-  QLabel *l = new QLabel( QStringLiteral( "Opacity" ), this );
+  QLabel *l = new QLabel( tr( "Opacity" ), this );
   mSlider = new QSlider( Qt::Horizontal, this );
   mSlider->setRange( 0, 1000 );
+#if QT_VERSION < QT_VERSION_CHECK(5, 11, 0)
   int sliderW = static_cast< int >( QFontMetricsF( font() ).width( 'X' ) * 16 * Qgis::UI_SCALE_FACTOR );
+#else
+  int sliderW = static_cast< int >( QFontMetricsF( font() ).horizontalAdvance( 'X' ) * 16 * Qgis::UI_SCALE_FACTOR );
+#endif
   mSlider->setMinimumWidth( sliderW / 2 );
   mSlider->setMaximumWidth( sliderW );
   QHBoxLayout *lay = new QHBoxLayout();
@@ -73,6 +77,8 @@ QgsLayerTreeOpacityWidget::QgsLayerTreeOpacityWidget( QgsMapLayer *layer )
 
     case QgsMapLayerType::PluginLayer:
     case QgsMapLayerType::MeshLayer:
+    case QgsMapLayerType::VectorTileLayer:
+    case QgsMapLayerType::AnnotationLayer:
       break;
 
   }
@@ -112,6 +118,8 @@ void QgsLayerTreeOpacityWidget::updateOpacityFromSlider()
 
     case QgsMapLayerType::PluginLayer:
     case QgsMapLayerType::MeshLayer:
+    case QgsMapLayerType::VectorTileLayer:
+    case QgsMapLayerType::AnnotationLayer:
       break;
   }
 
@@ -152,7 +160,9 @@ bool QgsLayerTreeOpacityWidget::Provider::supportsLayer( QgsMapLayer *layer )
       return true;
 
     case QgsMapLayerType::MeshLayer:
+    case QgsMapLayerType::VectorTileLayer:
     case QgsMapLayerType::PluginLayer:
+    case QgsMapLayerType::AnnotationLayer:
       return false;
   }
   return false;

@@ -92,9 +92,6 @@
               <height>150</height>
              </size>
             </property>
-            <property name="tabStopWidth">
-             <number>10</number>
-            </property>
            </widget>
           </item>
           <item row="1" column="0">
@@ -107,7 +104,7 @@
           <item row="2" column="0">
            <widget class="QPushButton" name="mInsertExpressionButton">
             <property name="text">
-             <string>Insert an Expression…</string>
+             <string>Insert or Edit an Expression…</string>
             </property>
            </widget>
           </item>

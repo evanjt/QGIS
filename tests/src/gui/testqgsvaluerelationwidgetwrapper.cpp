@@ -161,7 +161,7 @@ void TestQgsValueRelationWidgetWrapper::testDrillDown()
   QVERIFY( vl2.dataProvider()->addFeature( f3 ) );
 
   // build a value relation widget wrapper for municipality
-  QgsValueRelationWidgetWrapper w_municipality( &vl2, vl2.fields().indexOf( QStringLiteral( "fk_municipality" ) ), nullptr, nullptr );
+  QgsValueRelationWidgetWrapper w_municipality( &vl2, vl2.fields().indexOf( QLatin1String( "fk_municipality" ) ), nullptr, nullptr );
   QVariantMap cfg_municipality;
   cfg_municipality.insert( QStringLiteral( "Layer" ), vl1.id() );
   cfg_municipality.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk" ) );
@@ -170,7 +170,7 @@ void TestQgsValueRelationWidgetWrapper::testDrillDown()
   cfg_municipality.insert( QStringLiteral( "NofColumns" ), 1 );
   cfg_municipality.insert( QStringLiteral( "AllowNull" ), false );
   cfg_municipality.insert( QStringLiteral( "OrderByValue" ), true );
-  cfg_municipality.insert( QStringLiteral( "FilterExpression" ), QStringLiteral( "\"province\" =  current_value('fk_province')" ) );
+  cfg_municipality.insert( QStringLiteral( "FilterExpression" ), QStringLiteral( "\"province\" = current_value('fk_province')" ) );
   cfg_municipality.insert( QStringLiteral( "UseCompleter" ), false );
   w_municipality.setConfig( cfg_municipality );
   w_municipality.widget();
@@ -178,6 +178,11 @@ void TestQgsValueRelationWidgetWrapper::testDrillDown()
 
   QCOMPARE( w_municipality.mCache.size(), 2 );
   QCOMPARE( w_municipality.mComboBox->count(), 2 );
+
+  // Set a feature
+  w_municipality.setFeature( vl2.getFeature( 1 ) );
+  QCOMPARE( w_municipality.mCache.size(), 1 );
+  QCOMPARE( w_municipality.mComboBox->count(), 1 );
 
   // check that valueChanged signal is correctly triggered
   QSignalSpy spy( &w_municipality, &QgsEditorWidgetWrapper::valuesChanged );
@@ -237,7 +242,7 @@ void TestQgsValueRelationWidgetWrapper::testDrillDownMulti()
 {
   // create a vector layer
   QgsVectorLayer vl1( QStringLiteral( "Polygon?crs=epsg:4326&field=pk:int&field=province:int&field=municipality:string" ), QStringLiteral( "vl1" ), QStringLiteral( "memory" ) );
-  QgsVectorLayer vl2( QStringLiteral( "Point?crs=epsg:4326&field=pk:int&field=fk_province:int&field=fk_municipality:int" ), QStringLiteral( "vl2" ), QStringLiteral( "memory" ) );
+  QgsVectorLayer vl2( QStringLiteral( "Point?crs=epsg:4326&field=pk:int&field=fk_province:int&field=fk_municipality:string" ), QStringLiteral( "vl2" ), QStringLiteral( "memory" ) );
   QgsProject::instance()->addMapLayer( &vl1, false, false );
   QgsProject::instance()->addMapLayer( &vl2, false, false );
 
@@ -265,7 +270,7 @@ void TestQgsValueRelationWidgetWrapper::testDrillDownMulti()
   QVERIFY( vl2.dataProvider()->addFeature( f3 ) );
 
   // build a value relation widget wrapper for municipality
-  QgsValueRelationWidgetWrapper w_municipality( &vl2, vl2.fields().indexOf( QStringLiteral( "fk_municipality" ) ), nullptr, nullptr );
+  QgsValueRelationWidgetWrapper w_municipality( &vl2, vl2.fields().indexOf( QLatin1String( "fk_municipality" ) ), nullptr, nullptr );
   QVariantMap cfg_municipality;
   cfg_municipality.insert( QStringLiteral( "Layer" ), vl1.id() );
   cfg_municipality.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk" ) );
@@ -287,11 +292,7 @@ void TestQgsValueRelationWidgetWrapper::testDrillDownMulti()
 
   QCOMPARE( w_municipality.mTableWidget->rowCount(), 1 );
   QCOMPARE( w_municipality.mTableWidget->item( 0, 0 )->text(), QStringLiteral( "Some Place By The River" ) );
-#if GDAL_VERSION_NUM >= GDAL_COMPUTE_VERSION(2,4,0)
-  QCOMPARE( w_municipality.value(), QVariant( QVariantList( { 1 } ) ) );
-#else
   QCOMPARE( w_municipality.value(), QVariant( QStringLiteral( "{1}" ) ) );
-#endif
 
   // Filter by geometry
   cfg_municipality[ QStringLiteral( "FilterExpression" ) ] = QStringLiteral( "contains(buffer(@current_geometry, 1 ), $geometry)" );
@@ -315,29 +316,17 @@ void TestQgsValueRelationWidgetWrapper::testDrillDownMulti()
   QCOMPARE( w_municipality.mTableWidget->item( 0, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "2" ) );
   QCOMPARE( w_municipality.mTableWidget->item( 1, 0 )->text(), QStringLiteral( "Some Place By The River" ) );
   QCOMPARE( w_municipality.mTableWidget->item( 1, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "1" ) );
-#if GDAL_VERSION_NUM >= GDAL_COMPUTE_VERSION(2,4,0)
-  QCOMPARE( w_municipality.value(), QVariant( QVariantList( { 1 } ) ) );
-#else
   QCOMPARE( w_municipality.value(), QVariant( QStringLiteral( "{1}" ) ) );
-#endif
   QCOMPARE( w_municipality.mTableWidget->item( 0, 0 )->checkState(), Qt::Unchecked );
   QCOMPARE( w_municipality.mTableWidget->item( 1, 0 )->checkState(), Qt::Checked );
   w_municipality.setValues( QStringLiteral( "{1,2}" ), QVariantList() );
-#if GDAL_VERSION_NUM >= GDAL_COMPUTE_VERSION(2,4,0)
-  QCOMPARE( w_municipality.value(), QVariant( QVariantList( { 2, 1 } ) ) );
-#else
   QCOMPARE( w_municipality.value(), QVariant( QStringLiteral( "{2,1}" ) ) );
-#endif
   QCOMPARE( w_municipality.mTableWidget->item( 0, 0 )->checkState(), Qt::Checked );
   QCOMPARE( w_municipality.mTableWidget->item( 1, 0 )->checkState(), Qt::Checked );
 
   // Check with passing a variant list
   w_municipality.setValues( QVariantList( {1, 2} ), QVariantList() );
-#if GDAL_VERSION_NUM >= GDAL_COMPUTE_VERSION(2,4,0)
-  QCOMPARE( w_municipality.value(), QVariant( QVariantList( { 2, 1 } ) ) );
-#else
   QCOMPARE( w_municipality.value(), QVariant( QStringLiteral( "{2,1}" ) ) );
-#endif
 
   // Check values are checked
   f3.setAttribute( QStringLiteral( "fk_municipality" ), QStringLiteral( "{1,2}" ) );
@@ -347,13 +336,7 @@ void TestQgsValueRelationWidgetWrapper::testDrillDownMulti()
   QCOMPARE( w_municipality.mTableWidget->item( 1, 0 )->text(), QStringLiteral( "Some Place By The River" ) );
   QCOMPARE( w_municipality.mTableWidget->item( 0, 0 )->checkState(), Qt::Checked );
   QCOMPARE( w_municipality.mTableWidget->item( 1, 0 )->checkState(), Qt::Checked );
-#if GDAL_VERSION_NUM >= GDAL_COMPUTE_VERSION(2,4,0)
-  QCOMPARE( w_municipality.value(), QVariant( QVariantList( { 2, 1 } ) ) );
-#else
   QCOMPARE( w_municipality.value(), QVariant( QStringLiteral( "{2,1}" ) ) );
-#endif
-
-
 }
 
 void TestQgsValueRelationWidgetWrapper::testZeroIndexInRelatedTable()
@@ -391,7 +374,7 @@ void TestQgsValueRelationWidgetWrapper::testZeroIndexInRelatedTable()
   QVERIFY( vl2.dataProvider()->addFeature( f3 ) );
 
   // build a value relation widget wrapper for municipality
-  QgsValueRelationWidgetWrapper w_municipality( &vl2, vl2.fields().indexOf( QStringLiteral( "fk_municipality" ) ), nullptr, nullptr );
+  QgsValueRelationWidgetWrapper w_municipality( &vl2, vl2.fields().indexOf( QLatin1String( "fk_municipality" ) ), nullptr, nullptr );
   QVariantMap cfg_municipality;
   cfg_municipality.insert( QStringLiteral( "Layer" ), vl1.id() );
   cfg_municipality.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk" ) );
@@ -412,6 +395,7 @@ void TestQgsValueRelationWidgetWrapper::testZeroIndexInRelatedTable()
 
 void TestQgsValueRelationWidgetWrapper::testWithJsonInPostgres()
 {
+#ifdef ENABLE_PGTEST
   //this is only reading
 
   // create pg layers
@@ -431,17 +415,17 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInPostgres()
   QCOMPARE( vl_json->fields().at( 1 ).type(), QVariant::Map );
 
   // build a value relation widget wrapper for json field
-  QgsValueRelationWidgetWrapper w_favoriteauthors( vl_json, vl_json->fields().indexOf( QStringLiteral( "jvalue" ) ), nullptr, nullptr );
-  QVariantMap cfg_favoriteautors;
-  cfg_favoriteautors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
-  cfg_favoriteautors.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "Value" ), QStringLiteral( "name" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowMulti" ), true );
-  cfg_favoriteautors.insert( QStringLiteral( "NofColumns" ), 1 );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowNull" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "OrderByValue" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "UseCompleter" ), false );
-  w_favoriteauthors.setConfig( cfg_favoriteautors );
+  QgsValueRelationWidgetWrapper w_favoriteauthors( vl_json, vl_json->fields().indexOf( QLatin1String( "jvalue" ) ), nullptr, nullptr );
+  QVariantMap cfg_favoriteauthors;
+  cfg_favoriteauthors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
+  cfg_favoriteauthors.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "Value" ), QStringLiteral( "name" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowMulti" ), true );
+  cfg_favoriteauthors.insert( QStringLiteral( "NofColumns" ), 1 );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowNull" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "OrderByValue" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "UseCompleter" ), false );
+  w_favoriteauthors.setConfig( cfg_favoriteauthors );
   w_favoriteauthors.widget();
   w_favoriteauthors.setEnabled( true );
 
@@ -476,17 +460,17 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInPostgres()
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Unchecked );
 
   // build a value relation widget wrapper for jsonb field
-  QgsValueRelationWidgetWrapper w_favoriteauthors_b( vl_json, vl_json->fields().indexOf( QStringLiteral( "jbvalue" ) ), nullptr, nullptr );
-  QVariantMap cfg_favoriteautors_b;
-  cfg_favoriteautors_b.insert( QStringLiteral( "Layer" ), vl_authors->id() );
-  cfg_favoriteautors_b.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk" ) );
-  cfg_favoriteautors_b.insert( QStringLiteral( "Value" ), QStringLiteral( "name" ) );
-  cfg_favoriteautors_b.insert( QStringLiteral( "AllowMulti" ), true );
-  cfg_favoriteautors_b.insert( QStringLiteral( "NofColumns" ), 1 );
-  cfg_favoriteautors_b.insert( QStringLiteral( "AllowNull" ), false );
-  cfg_favoriteautors_b.insert( QStringLiteral( "OrderByValue" ), false );
-  cfg_favoriteautors_b.insert( QStringLiteral( "UseCompleter" ), false );
-  w_favoriteauthors_b.setConfig( cfg_favoriteautors_b );
+  QgsValueRelationWidgetWrapper w_favoriteauthors_b( vl_json, vl_json->fields().indexOf( QLatin1String( "jbvalue" ) ), nullptr, nullptr );
+  QVariantMap cfg_favoriteauthors_b;
+  cfg_favoriteauthors_b.insert( QStringLiteral( "Layer" ), vl_authors->id() );
+  cfg_favoriteauthors_b.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk" ) );
+  cfg_favoriteauthors_b.insert( QStringLiteral( "Value" ), QStringLiteral( "name" ) );
+  cfg_favoriteauthors_b.insert( QStringLiteral( "AllowMulti" ), true );
+  cfg_favoriteauthors_b.insert( QStringLiteral( "NofColumns" ), 1 );
+  cfg_favoriteauthors_b.insert( QStringLiteral( "AllowNull" ), false );
+  cfg_favoriteauthors_b.insert( QStringLiteral( "OrderByValue" ), false );
+  cfg_favoriteauthors_b.insert( QStringLiteral( "UseCompleter" ), false );
+  w_favoriteauthors_b.setConfig( cfg_favoriteauthors_b );
   w_favoriteauthors_b.widget();
   w_favoriteauthors_b.setEnabled( true );
 
@@ -522,7 +506,7 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInPostgres()
 
   // check value from widget wrapper
   QCOMPARE( w_favoriteauthors_b.value().toStringList(), QStringList() << "4" << "5" << "6" );
-
+#endif
 }
 
 void TestQgsValueRelationWidgetWrapper::testWithJsonInGPKG()
@@ -544,17 +528,17 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInGPKG()
   vl_json->startEditing();
 
   // build a value relation widget wrapper for authors
-  QgsValueRelationWidgetWrapper w_favoriteauthors( vl_json, vl_json->fields().indexOf( QStringLiteral( "json_content" ) ), nullptr, nullptr );
-  QVariantMap cfg_favoriteautors;
-  cfg_favoriteautors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
-  cfg_favoriteautors.insert( QStringLiteral( "Key" ),  QStringLiteral( "fid" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "Value" ), QStringLiteral( "NAME" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowMulti" ), true );
-  cfg_favoriteautors.insert( QStringLiteral( "NofColumns" ), 1 );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowNull" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "OrderByValue" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "UseCompleter" ), false );
-  w_favoriteauthors.setConfig( cfg_favoriteautors );
+  QgsValueRelationWidgetWrapper w_favoriteauthors( vl_json, vl_json->fields().indexOf( QLatin1String( "json_content" ) ), nullptr, nullptr );
+  QVariantMap cfg_favoriteauthors;
+  cfg_favoriteauthors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
+  cfg_favoriteauthors.insert( QStringLiteral( "Key" ),  QStringLiteral( "fid" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "Value" ), QStringLiteral( "NAME" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowMulti" ), true );
+  cfg_favoriteauthors.insert( QStringLiteral( "NofColumns" ), 1 );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowNull" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "OrderByValue" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "UseCompleter" ), false );
+  w_favoriteauthors.setConfig( cfg_favoriteauthors );
   w_favoriteauthors.widget();
   w_favoriteauthors.setEnabled( true );
 
@@ -672,17 +656,17 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKG()
   vl_text->startEditing();
 
   // build a value relation widget wrapper for authors
-  QgsValueRelationWidgetWrapper w_favoriteauthors( vl_text, vl_text->fields().indexOf( QStringLiteral( "PRFEDEA" ) ), nullptr, nullptr );
-  QVariantMap cfg_favoriteautors;
-  cfg_favoriteautors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
-  cfg_favoriteautors.insert( QStringLiteral( "Key" ),  QStringLiteral( "fid" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "Value" ), QStringLiteral( "NAME" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowMulti" ), true );
-  cfg_favoriteautors.insert( QStringLiteral( "NofColumns" ), 1 );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowNull" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "OrderByValue" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "UseCompleter" ), false );
-  w_favoriteauthors.setConfig( cfg_favoriteautors );
+  QgsValueRelationWidgetWrapper w_favoriteauthors( vl_text, vl_text->fields().indexOf( QLatin1String( "PRFEDEA" ) ), nullptr, nullptr );
+  QVariantMap cfg_favoriteauthors;
+  cfg_favoriteauthors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
+  cfg_favoriteauthors.insert( QStringLiteral( "Key" ),  QStringLiteral( "fid" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "Value" ), QStringLiteral( "NAME" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowMulti" ), true );
+  cfg_favoriteauthors.insert( QStringLiteral( "NofColumns" ), 1 );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowNull" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "OrderByValue" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "UseCompleter" ), false );
+  w_favoriteauthors.setConfig( cfg_favoriteauthors );
   w_favoriteauthors.widget();
   w_favoriteauthors.setEnabled( true );
 
@@ -803,8 +787,8 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKG()
   vl_text_reread->startEditing();
 
   // build a value relation widget wrapper for authors
-  QgsValueRelationWidgetWrapper w_favoriteauthors_reread( vl_text_reread, vl_text->fields().indexOf( QStringLiteral( "PRFEDEA" ) ), nullptr, nullptr );
-  w_favoriteauthors_reread.setConfig( cfg_favoriteautors );
+  QgsValueRelationWidgetWrapper w_favoriteauthors_reread( vl_text_reread, vl_text->fields().indexOf( QLatin1String( "PRFEDEA" ) ), nullptr, nullptr );
+  w_favoriteauthors_reread.setConfig( cfg_favoriteauthors );
   w_favoriteauthors_reread.widget();
   w_favoriteauthors_reread.setEnabled( true );
 
@@ -844,17 +828,17 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGTextFk()
   vl_text->startEditing();
 
   // build a value relation widget wrapper for authors
-  QgsValueRelationWidgetWrapper w_favoriteauthors( vl_text, vl_text->fields().indexOf( QStringLiteral( "PRFEDEA" ) ), nullptr, nullptr );
-  QVariantMap cfg_favoriteautors;
-  cfg_favoriteautors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
-  cfg_favoriteautors.insert( QStringLiteral( "Key" ),  QStringLiteral( "NAME" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "Value" ), QStringLiteral( "NAME" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowMulti" ), true );
-  cfg_favoriteautors.insert( QStringLiteral( "NofColumns" ), 1 );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowNull" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "OrderByValue" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "UseCompleter" ), false );
-  w_favoriteauthors.setConfig( cfg_favoriteautors );
+  QgsValueRelationWidgetWrapper w_favoriteauthors( vl_text, vl_text->fields().indexOf( QLatin1String( "PRFEDEA" ) ), nullptr, nullptr );
+  QVariantMap cfg_favoriteauthors;
+  cfg_favoriteauthors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
+  cfg_favoriteauthors.insert( QStringLiteral( "Key" ),  QStringLiteral( "NAME" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "Value" ), QStringLiteral( "NAME" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowMulti" ), true );
+  cfg_favoriteauthors.insert( QStringLiteral( "NofColumns" ), 1 );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowNull" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "OrderByValue" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "UseCompleter" ), false );
+  w_favoriteauthors.setConfig( cfg_favoriteauthors );
   w_favoriteauthors.widget();
   w_favoriteauthors.setEnabled( true );
 
@@ -974,8 +958,8 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGTextFk()
   vl_text_reread->startEditing();
 
   // build a value relation widget wrapper for authors
-  QgsValueRelationWidgetWrapper w_favoriteauthors_reread( vl_text_reread, vl_text_reread->fields().indexOf( QStringLiteral( "PRFEDEA" ) ), nullptr, nullptr );
-  w_favoriteauthors_reread.setConfig( cfg_favoriteautors );
+  QgsValueRelationWidgetWrapper w_favoriteauthors_reread( vl_text_reread, vl_text_reread->fields().indexOf( QLatin1String( "PRFEDEA" ) ), nullptr, nullptr );
+  w_favoriteauthors_reread.setConfig( cfg_favoriteauthors );
   w_favoriteauthors_reread.widget();
   w_favoriteauthors_reread.setEnabled( true );
 
@@ -1031,8 +1015,8 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGTextFk()
   vl_text_reread2->startEditing();
 
   // build a value relation widget wrapper for authors
-  QgsValueRelationWidgetWrapper w_favoriteauthors_reread2( vl_text_reread2, vl_text_reread2->fields().indexOf( QStringLiteral( "PRFEDEA" ) ), nullptr, nullptr );
-  w_favoriteauthors_reread2.setConfig( cfg_favoriteautors );
+  QgsValueRelationWidgetWrapper w_favoriteauthors_reread2( vl_text_reread2, vl_text_reread2->fields().indexOf( QLatin1String( "PRFEDEA" ) ), nullptr, nullptr );
+  w_favoriteauthors_reread2.setConfig( cfg_favoriteauthors );
   w_favoriteauthors_reread2.widget();
   w_favoriteauthors_reread2.setEnabled( true );
 
@@ -1065,13 +1049,13 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGWeirdTextFk()
   QgsVectorLayer *vl_text = new QgsVectorLayer( myMapFileInfoFoo.filePath() + "|layername=foo", "test", QStringLiteral( "ogr" ) );
   QVERIFY( vl_text->isValid() );
 
-  // create ogr spatialite layer for autors with weird signs (vl_authors)
+  // create ogr spatialite layer for authors with weird signs (vl_authors)
   myTempFileName = myTempDirName + QStringLiteral( "/valuerelation_widget_wrapper_test.spatialite.sqlite" );
   QFile::copy( myFileName + QStringLiteral( "/valuerelation_widget_wrapper_test.spatialite.sqlite" ),
                myTempFileName );
   QFileInfo myMapFileInfoAuthor( myTempFileName );
   QgsVectorLayer *vl_authors = new QgsVectorLayer( QStringLiteral( R"(dbname='%1' table="%2")" )
-      .arg( myMapFileInfoAuthor.filePath() ).arg( QStringLiteral( "authors" ) ),
+      .arg( myMapFileInfoAuthor.filePath() ).arg( QLatin1String( "authors" ) ),
       QStringLiteral( "test" ),
       QStringLiteral( "spatialite" ) );
   QVERIFY( vl_authors->isValid() );
@@ -1081,17 +1065,17 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGWeirdTextFk()
   vl_text->startEditing();
 
   // build a value relation widget wrapper for authors
-  QgsValueRelationWidgetWrapper w_favoriteauthors( vl_text, vl_text->fields().indexOf( QStringLiteral( "PRFEDEA" ) ), nullptr, nullptr );
-  QVariantMap cfg_favoriteautors;
-  cfg_favoriteautors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
-  cfg_favoriteautors.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk_text" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "Value" ), QStringLiteral( "name" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowMulti" ), true );
-  cfg_favoriteautors.insert( QStringLiteral( "NofColumns" ), 1 );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowNull" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "OrderByValue" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "UseCompleter" ), false );
-  w_favoriteauthors.setConfig( cfg_favoriteautors );
+  QgsValueRelationWidgetWrapper w_favoriteauthors( vl_text, vl_text->fields().indexOf( QLatin1String( "PRFEDEA" ) ), nullptr, nullptr );
+  QVariantMap cfg_favoriteauthors;
+  cfg_favoriteauthors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
+  cfg_favoriteauthors.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk_text" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "Value" ), QStringLiteral( "name" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowMulti" ), true );
+  cfg_favoriteauthors.insert( QStringLiteral( "NofColumns" ), 1 );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowNull" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "OrderByValue" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "UseCompleter" ), false );
+  w_favoriteauthors.setConfig( cfg_favoriteauthors );
   w_favoriteauthors.widget();
   w_favoriteauthors.setEnabled( true );
 
@@ -1109,8 +1093,8 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGWeirdTextFk()
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 4, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "5adams'singlequote" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->text(), QStringLiteral( "Ken Follett" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "6follett{}" ) );
-  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel García Márquez" ) );
-  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "7garcìa][" ) );
+  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel Garc%1a M%2rquez" ).arg( QChar( 0x00ED ) ).arg( QChar( 0x00E1 ) ) );
+  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "7garc%1a][" ).arg( QChar( 0x00EC ) ) );
 
   w_favoriteauthors.setFeature( vl_text->getFeature( 1 ) );
 
@@ -1127,7 +1111,7 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGWeirdTextFk()
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 4, 0 )->checkState(), Qt::Unchecked );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->text(), QStringLiteral( "Ken Follett" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Unchecked );
-  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel García Márquez" ) );
+  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel Garc%1a M%2rquez" ).arg( QChar( 0x00ED ) ).arg( QChar( 0x00E1 ) ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Unchecked );
 
   //check authors 1,2,4,5,6 means all the super weird ones: "2helm,comma", "3johnson\"quote", "5adams'singlequote", "6follett{}", "7garcìa]["
@@ -1150,14 +1134,14 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGWeirdTextFk()
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 4, 0 )->checkState(), Qt::Checked );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->text(), QStringLiteral( "Ken Follett" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Checked );
-  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel García Márquez" ) );
+  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel Garc%1a M%2rquez" ).arg( QChar( 0x00ED ) ).arg( QChar( 0x00E1 ) ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Checked );
 
   //we do jump over the part with QgsAttributeForm::saveEdits
   vl_text->changeAttributeValue( 1, 3, w_favoriteauthors.value() );
 
   //check if everything set correctly
-  QCOMPARE( w_favoriteauthors.value(), QVariant( QStringLiteral( "{\"2helm,comma\",\"3johnson\\\"quote\",\"5adams'singlequote\",\"6follett{}\",\"7garcìa][\"}" ) ) );
+  QCOMPARE( w_favoriteauthors.value(), QVariant( QStringLiteral( "{\"2helm,comma\",\"3johnson\\\"quote\",\"5adams'singlequote\",\"6follett{}\",\"7garc%1a][\"}" ).arg( QChar( 0x00EC ) ) ) );
 
   w_favoriteauthors.setFeature( vl_text->getFeature( 2 ) );
   //check if second feature checked correctly (none)
@@ -1173,7 +1157,7 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGWeirdTextFk()
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 4, 0 )->checkState(), Qt::Unchecked );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->text(), QStringLiteral( "Ken Follett" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Unchecked );
-  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel García Márquez" ) );
+  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel Garc%1a M%2rquez" ).arg( QChar( 0x00ED ) ).arg( QChar( 0x00E1 ) ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Unchecked );
 
   w_favoriteauthors.setFeature( vl_text->getFeature( 1 ) );
@@ -1190,12 +1174,12 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGWeirdTextFk()
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 4, 0 )->checkState(), Qt::Checked );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->text(), QStringLiteral( "Ken Follett" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Checked );
-  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel García Márquez" ) );
+  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel Garc%1a M%2rquez" ).arg( QChar( 0x00ED ) ).arg( QChar( 0x00E1 ) ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Checked );
 
   // check if stored correctly
   vl_text->commitChanges();
-  QString expected_string = QStringLiteral( "{\"2helm,comma\",\"3johnson\\\"quote\",\"5adams'singlequote\",\"6follett{}\",\"7garcìa][\"}" );
+  QString expected_string = QStringLiteral( "{\"2helm,comma\",\"3johnson\\\"quote\",\"5adams'singlequote\",\"6follett{}\",\"7garc%1a][\"}" ).arg( QChar( 0x00EC ) );
 
   QgsFeature f = vl_text->getFeature( 1 );
   QVariant attribute = f.attribute( QStringLiteral( "PRFEDEA" ) );
@@ -1210,8 +1194,8 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGWeirdTextFk()
   vl_text_reread->startEditing();
 
   // build a value relation widget wrapper for authors
-  QgsValueRelationWidgetWrapper w_favoriteauthors_reread( vl_text_reread, vl_text_reread->fields().indexOf( QStringLiteral( "PRFEDEA" ) ), nullptr, nullptr );
-  w_favoriteauthors_reread.setConfig( cfg_favoriteautors );
+  QgsValueRelationWidgetWrapper w_favoriteauthors_reread( vl_text_reread, vl_text_reread->fields().indexOf( QLatin1String( "PRFEDEA" ) ), nullptr, nullptr );
+  w_favoriteauthors_reread.setConfig( cfg_favoriteauthors );
   w_favoriteauthors_reread.widget();
   w_favoriteauthors_reread.setEnabled( true );
 
@@ -1230,7 +1214,7 @@ void TestQgsValueRelationWidgetWrapper::testWithTextInGPKGWeirdTextFk()
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 4, 0 )->checkState(), Qt::Checked );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->text(), QStringLiteral( "Ken Follett" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Checked );
-  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel García Márquez" ) );
+  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel Garc%1a M%2rquez" ).arg( QChar( 0x00ED ) ).arg( QChar( 0x00E1 ) ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->checkState(), Qt::Checked );
 }
 
@@ -1246,11 +1230,11 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInSpatialite()
                myTempFileName );
   QFileInfo myMapFileInfo( myTempFileName );
   QgsVectorLayer *vl_json = new QgsVectorLayer( QStringLiteral( R"(dbname='%1' table="%2")" )
-      .arg( myMapFileInfo.filePath() ).arg( QStringLiteral( "json" ) ),
+      .arg( myMapFileInfo.filePath() ).arg( QLatin1String( "json" ) ),
       QStringLiteral( "test" ),
       QStringLiteral( "spatialite" ) );
   QgsVectorLayer *vl_authors = new QgsVectorLayer( QStringLiteral( R"(dbname='%1' table="%2")" )
-      .arg( myMapFileInfo.filePath() ).arg( QStringLiteral( "authors" ) ),
+      .arg( myMapFileInfo.filePath() ).arg( QLatin1String( "authors" ) ),
       QStringLiteral( "test" ),
       QStringLiteral( "spatialite" ) );
   const auto fk_field_idx { vl_json->fields().indexOf( fk_field ) };
@@ -1265,16 +1249,16 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInSpatialite()
   // build a value relation widget wrapper for authors
   // fk_field is a json array type
   QgsValueRelationWidgetWrapper w_favoriteauthors( vl_json, fk_field_idx, nullptr, nullptr );
-  QVariantMap cfg_favoriteautors;
-  cfg_favoriteautors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
-  cfg_favoriteautors.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "Value" ), QStringLiteral( "name" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowMulti" ), true );
-  cfg_favoriteautors.insert( QStringLiteral( "NofColumns" ), 1 );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowNull" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "OrderByValue" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "UseCompleter" ), false );
-  w_favoriteauthors.setConfig( cfg_favoriteautors );
+  QVariantMap cfg_favoriteauthors;
+  cfg_favoriteauthors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
+  cfg_favoriteauthors.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "Value" ), QStringLiteral( "name" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowMulti" ), true );
+  cfg_favoriteauthors.insert( QStringLiteral( "NofColumns" ), 1 );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowNull" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "OrderByValue" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "UseCompleter" ), false );
+  w_favoriteauthors.setConfig( cfg_favoriteauthors );
   w_favoriteauthors.widget();
   w_favoriteauthors.setEnabled( true );
 
@@ -1292,7 +1276,7 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInSpatialite()
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 4, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "5" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->text(), QStringLiteral( "Ken Follett" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "6" ) );
-  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel García Márquez" ) );
+  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel Garc%1a M%2rquez" ).arg( QChar( 0x00ED ) ).arg( QChar( 0x00E1 ) ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->checkState(), Qt::Unchecked );
 
   /* Test data:
@@ -1389,11 +1373,11 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInSpatialiteTextFk()
                myTempFileName );
   QFileInfo myMapFileInfo( myTempFileName );
   QgsVectorLayer *vl_json = new QgsVectorLayer( QStringLiteral( R"(dbname='%1' table="%2")" )
-      .arg( myMapFileInfo.filePath() ).arg( QStringLiteral( "json" ) ),
+      .arg( myMapFileInfo.filePath() ).arg( QLatin1String( "json" ) ),
       QStringLiteral( "test" ),
       QStringLiteral( "spatialite" ) );
   QgsVectorLayer *vl_authors = new QgsVectorLayer( QStringLiteral( R"(dbname='%1' table="%2")" )
-      .arg( myMapFileInfo.filePath() ).arg( QStringLiteral( "authors" ) ),
+      .arg( myMapFileInfo.filePath() ).arg( QLatin1String( "authors" ) ),
       QStringLiteral( "test" ),
       QStringLiteral( "spatialite" ) );
   const auto fk_field_idx { vl_json->fields().indexOf( fk_field ) };
@@ -1408,16 +1392,16 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInSpatialiteTextFk()
   // build a value relation widget wrapper for authors
   // fk_field is a json array type
   QgsValueRelationWidgetWrapper w_favoriteauthors( vl_json, fk_field_idx, nullptr, nullptr );
-  QVariantMap cfg_favoriteautors;
-  cfg_favoriteautors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
-  cfg_favoriteautors.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk_text" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "Value" ), QStringLiteral( "name" ) );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowMulti" ), true );
-  cfg_favoriteautors.insert( QStringLiteral( "NofColumns" ), 1 );
-  cfg_favoriteautors.insert( QStringLiteral( "AllowNull" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "OrderByValue" ), false );
-  cfg_favoriteautors.insert( QStringLiteral( "UseCompleter" ), false );
-  w_favoriteauthors.setConfig( cfg_favoriteautors );
+  QVariantMap cfg_favoriteauthors;
+  cfg_favoriteauthors.insert( QStringLiteral( "Layer" ), vl_authors->id() );
+  cfg_favoriteauthors.insert( QStringLiteral( "Key" ),  QStringLiteral( "pk_text" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "Value" ), QStringLiteral( "name" ) );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowMulti" ), true );
+  cfg_favoriteauthors.insert( QStringLiteral( "NofColumns" ), 1 );
+  cfg_favoriteauthors.insert( QStringLiteral( "AllowNull" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "OrderByValue" ), false );
+  cfg_favoriteauthors.insert( QStringLiteral( "UseCompleter" ), false );
+  w_favoriteauthors.setConfig( cfg_favoriteauthors );
   w_favoriteauthors.widget();
   w_favoriteauthors.setEnabled( true );
 
@@ -1435,8 +1419,8 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInSpatialiteTextFk()
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 4, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "5adams'singlequote" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->text(), QStringLiteral( "Ken Follett" ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 5, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "6follett{}" ) );
-  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel García Márquez" ) );
-  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "7garcìa][" ) );
+  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->text(), QStringLiteral( "Gabriel Garc%1a M%2rquez" ).arg( QChar( 0x00ED ) ).arg( QChar( 0x00E1 ) ) );
+  QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->data( Qt::UserRole ).toString(), QStringLiteral( "7garc%1a][" ).arg( QChar( 0x00EC ) ) );
   QCOMPARE( w_favoriteauthors.mTableWidget->item( 6, 0 )->checkState(), Qt::Unchecked );
 
   /* Test data:
@@ -1453,7 +1437,7 @@ void TestQgsValueRelationWidgetWrapper::testWithJsonInSpatialiteTextFk()
     Data:
     1 "[1,3]" "[""1gamma"", ""3johnson\""quote""]
     2 "[2,5]" "[""2helm,comma"", ""5adams'singlequote""]"
-    3 "[4,6,7]" "[""4vlissides"", ""6follett{}"" , ""7garcìa][""]"
+    3 "[4,6,7]" "[""4vlissides"", ""6follett{}"" , ""7garca][""]"
     5
     7 ""  ""
 
@@ -1570,7 +1554,7 @@ void TestQgsValueRelationWidgetWrapper::testMatchLayerName()
   QVERIFY( vl2.dataProvider()->addFeature( f3 ) );
 
   // build a value relation widget wrapper for municipality
-  QgsValueRelationWidgetWrapper w_municipality( &vl2, vl2.fields().indexOf( QStringLiteral( "fk_municipality" ) ), nullptr, nullptr );
+  QgsValueRelationWidgetWrapper w_municipality( &vl2, vl2.fields().indexOf( QLatin1String( "fk_municipality" ) ), nullptr, nullptr );
   QVariantMap cfg_municipality;
   cfg_municipality.insert( QStringLiteral( "Layer" ), QStringLiteral( "wrong_id_here_hope_name_is_good" ) );
   cfg_municipality.insert( QStringLiteral( "LayerName" ), vl1.name() );

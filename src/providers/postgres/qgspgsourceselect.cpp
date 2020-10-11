@@ -40,6 +40,7 @@ email                : sherman at mrcc.com
 #include <QStringList>
 #include <QStyledItemDelegate>
 
+
 //! Used to create an editor for when the user tries to change the contents of a cell
 QWidget *QgsPgSourceSelectDelegate::createEditor( QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index ) const
 {
@@ -144,7 +145,7 @@ void QgsPgSourceSelectDelegate::setEditorData( QWidget *editor, const QModelInde
   if ( le )
   {
     bool ok;
-    value.toInt( &ok );
+    ( void )value.toInt( &ok );
     if ( index.column() == QgsPgTableModel::DbtmSrid && !ok )
       value.clear();
 
@@ -159,7 +160,7 @@ void QgsPgSourceSelectDelegate::setModelData( QWidget *editor, QAbstractItemMode
   {
     if ( index.column() == QgsPgTableModel::DbtmType )
     {
-      QgsWkbTypes::Type type = ( QgsWkbTypes::Type ) cb->currentData().toInt();
+      QgsWkbTypes::Type type = static_cast< QgsWkbTypes::Type >( cb->currentData().toInt() );
 
       model->setData( index, QgsPgTableModel::iconForWkbType( type ), Qt::DecorationRole );
       model->setData( index, type != QgsWkbTypes::Unknown ? QgsPostgresConn::displayStringForWkbType( type ) : tr( "Select…" ) );
@@ -176,7 +177,7 @@ void QgsPgSourceSelectDelegate::setModelData( QWidget *editor, QAbstractItemMode
           cols << item->text();
       }
 
-      model->setData( index, cols.isEmpty() ? tr( "Select…" ) : cols.join( QStringLiteral( ", " ) ) );
+      model->setData( index, cols.isEmpty() ? tr( "Select…" ) : cols.join( QLatin1String( ", " ) ) );
       model->setData( index, cols, Qt::UserRole + 2 );
     }
   }
@@ -264,6 +265,7 @@ QgsPgSourceSelect::QgsPgSourceSelect( QWidget *parent, Qt::WindowFlags fl, QgsPr
 
   mTablesTreeView->setModel( &mProxyModel );
   mTablesTreeView->setSortingEnabled( true );
+  mTablesTreeView->setUniformRowHeights( true );
   mTablesTreeView->setEditTriggers( QAbstractItemView::CurrentChanged );
   mTablesTreeView->setItemDelegate( new QgsPgSourceSelectDelegate( this ) );
 
@@ -293,7 +295,7 @@ QgsPgSourceSelect::QgsPgSourceSelect( QWidget *parent, Qt::WindowFlags fl, QgsPr
   mSearchModeLabel->setVisible( false );
   mSearchTableEdit->setVisible( false );
 }
-//! Autoconnected SLOTS *
+//! Autoconnected SLOTS
 // Slot for adding a new connection
 void QgsPgSourceSelect::btnNew_clicked()
 {
@@ -343,6 +345,7 @@ void QgsPgSourceSelect::btnLoad_clicked()
 void QgsPgSourceSelect::btnEdit_clicked()
 {
   QgsPgNewConnection *nc = new QgsPgNewConnection( this, cmbConnections->currentText() );
+  nc->setWindowTitle( tr( "Edit PostGIS Connection" ) );
   if ( nc->exec() )
   {
     populateConnectionList();
@@ -351,7 +354,7 @@ void QgsPgSourceSelect::btnEdit_clicked()
   delete nc;
 }
 
-//! End Autoconnected SLOTS *
+//! End Autoconnected SLOTS
 
 // Remember which database is selected
 void QgsPgSourceSelect::cmbConnections_currentIndexChanged( const QString &text )
@@ -480,12 +483,13 @@ void QgsPgSourceSelect::populateConnectionList()
   cmbConnections->addItems( QgsPostgresConn::connectionList() );
   cmbConnections->blockSignals( false );
 
-  setConnectionListPosition();
-
+  btnConnect->setDisabled( cmbConnections->count() == 0 );
   btnEdit->setDisabled( cmbConnections->count() == 0 );
   btnDelete->setDisabled( cmbConnections->count() == 0 );
-  btnConnect->setDisabled( cmbConnections->count() == 0 );
+  btnSave->setDisabled( cmbConnections->count() == 0 );
   cmbConnections->setDisabled( cmbConnections->count() == 0 );
+
+  setConnectionListPosition();
 }
 
 // Slot for performing action when the Add button is clicked
@@ -507,7 +511,7 @@ void QgsPgSourceSelect::addButtonClicked()
       continue;
 
     mSelectedTables << uri;
-    if ( uri.startsWith( QStringLiteral( "PG: " ) ) )
+    if ( uri.startsWith( QLatin1String( "PG: " ) ) )
     {
       rasterTables.append( QPair<QString, QString>( idx.data().toString(), uri ) );
     }
@@ -531,7 +535,8 @@ void QgsPgSourceSelect::addButtonClicked()
     {
       for ( const auto &u : qgis::as_const( rasterTables ) )
       {
-        emit addRasterLayer( u.second, u.first, QLatin1String( "gdal" ) );
+        // Use "gdal" to proxy rasters to GDAL provider, or "postgresraster" for native PostGIS raster provider
+        emit addRasterLayer( u.second, u.first, QLatin1String( "postgresraster" ) );
       }
     }
 
@@ -539,6 +544,10 @@ void QgsPgSourceSelect::addButtonClicked()
     {
       accept();
     }
+
+    // Clear selection after layers have been added
+    mTablesTreeView->selectionModel()->clearSelection();
+
   }
 }
 

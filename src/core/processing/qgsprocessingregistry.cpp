@@ -18,6 +18,10 @@
 #include "qgsprocessingregistry.h"
 #include "qgsvectorfilewriter.h"
 #include "qgsprocessingparametertypeimpl.h"
+#include "qgsprocessingparametervectortilewriterlayers.h"
+#include "qgsprocessingparametertininputlayers.h"
+#include "qgsprocessingparameterfieldmap.h"
+#include "qgsprocessingparameteraggregate.h"
 
 QgsProcessingRegistry::QgsProcessingRegistry( QObject *parent SIP_TRANSFERTHIS )
   : QObject( parent )
@@ -31,6 +35,7 @@ QgsProcessingRegistry::QgsProcessingRegistry( QObject *parent SIP_TRANSFERTHIS )
   addParameterType( new QgsProcessingParameterTypeCrs() );
   addParameterType( new QgsProcessingParameterTypeRange() );
   addParameterType( new QgsProcessingParameterTypePoint() );
+  addParameterType( new QgsProcessingParameterTypeGeometry() );
   addParameterType( new QgsProcessingParameterTypeEnum() );
   addParameterType( new QgsProcessingParameterTypeExtent() );
   addParameterType( new QgsProcessingParameterTypeMatrix() );
@@ -52,6 +57,18 @@ QgsProcessingRegistry::QgsProcessingRegistry( QObject *parent SIP_TRANSFERTHIS )
   addParameterType( new QgsProcessingParameterTypeLayout() );
   addParameterType( new QgsProcessingParameterTypeLayoutItem() );
   addParameterType( new QgsProcessingParameterTypeColor() );
+#if PROJ_VERSION_MAJOR>=6
+  addParameterType( new QgsProcessingParameterTypeCoordinateOperation() );
+#endif
+  addParameterType( new QgsProcessingParameterTypeMapTheme() );
+  addParameterType( new QgsProcessingParameterTypeDateTime() );
+  addParameterType( new QgsProcessingParameterTypeProviderConnection() );
+  addParameterType( new QgsProcessingParameterTypeDatabaseSchema() );
+  addParameterType( new QgsProcessingParameterTypeDatabaseTable() );
+  addParameterType( new QgsProcessingParameterTypeVectorTileWriterLayers() );
+  addParameterType( new QgsProcessingParameterTypeFieldMapping() );
+  addParameterType( new QgsProcessingParameterTypeAggregate() );
+  addParameterType( new QgsProcessingParameterTypeTinInputLayers() );
 }
 
 QgsProcessingRegistry::~QgsProcessingRegistry()
@@ -134,8 +151,11 @@ QList< const QgsProcessingAlgorithm * > QgsProcessingRegistry::algorithms() cons
   return algs;
 }
 
-const QgsProcessingAlgorithm *QgsProcessingRegistry::algorithmById( const QString &id ) const
+const QgsProcessingAlgorithm *QgsProcessingRegistry::algorithmById( const QString &constId ) const
 {
+  // allow mapping of algorithm via registered algorithm aliases
+  QString id = mAlgorithmAliases.value( constId, constId );
+
   QMap<QString, QgsProcessingProvider *>::const_iterator it = mProviders.constBegin();
   for ( ; it != mProviders.constEnd(); ++it )
   {
@@ -164,6 +184,11 @@ QgsProcessingAlgorithm *QgsProcessingRegistry::createAlgorithmById( const QStrin
 
   std::unique_ptr< QgsProcessingAlgorithm > creation( alg->create( configuration ) );
   return creation.release();
+}
+
+void QgsProcessingRegistry::addAlgorithmAlias( const QString &aliasId, const QString &actualId )
+{
+  mAlgorithmAliases.insert( aliasId, actualId );
 }
 
 bool QgsProcessingRegistry::addParameterType( QgsProcessingParameterType *type )

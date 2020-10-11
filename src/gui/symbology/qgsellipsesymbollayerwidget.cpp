@@ -15,6 +15,7 @@
 #include "qgsellipsesymbollayerwidget.h"
 #include "qgsellipsesymbollayer.h"
 #include "qgsvectorlayer.h"
+#include "qgssymbollayerutils.h"
 #include <QColorDialog>
 
 QgsEllipseSymbolLayerWidget::QgsEllipseSymbolLayerWidget( QgsVectorLayer *vl, QWidget *parent )
@@ -68,7 +69,11 @@ QgsEllipseSymbolLayerWidget::QgsEllipseSymbolLayerWidget( QgsVectorLayer *vl, QW
   names << QStringLiteral( "circle" ) << QStringLiteral( "rectangle" ) << QStringLiteral( "diamond" ) << QStringLiteral( "cross" ) << QStringLiteral( "triangle" ) << QStringLiteral( "right_half_triangle" ) << QStringLiteral( "left_half_triangle" ) << QStringLiteral( "semi_circle" );
 
   int size = mShapeListWidget->iconSize().width();
-  size = std::max( 30, static_cast< int >( std::round( Qgis::UI_SCALE_FACTOR * fontMetrics().width( QStringLiteral( "XXX" ) ) ) ) );
+#if QT_VERSION < QT_VERSION_CHECK(5, 11, 0)
+  size = std::max( 30, static_cast< int >( std::round( Qgis::UI_SCALE_FACTOR * fontMetrics().width( 'X' ) * 3 ) ) );
+#else
+  size = std::max( 30, static_cast< int >( std::round( Qgis::UI_SCALE_FACTOR * fontMetrics().horizontalAdvance( 'X' ) * 3 ) ) );
+#endif
   mShapeListWidget->setGridSize( QSize( size * 1.2, size * 1.2 ) );
   mShapeListWidget->setIconSize( QSize( size, size ) );
 

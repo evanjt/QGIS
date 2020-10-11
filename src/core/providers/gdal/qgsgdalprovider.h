@@ -55,14 +55,14 @@ int CPL_STDCALL progressCallback( double dfComplete,
 class QgsCoordinateTransform;
 
 /**
-
-  \brief Data provider for GDAL layers.
-
-  This provider implements the interface defined in the QgsDataProvider class
-  to provide access to spatial data residing in a GDAL layers.
-
+ *
+ * \brief Data provider for GDAL layers.
+ *
+ * This provider implements the interface defined in the QgsDataProvider class
+ * to provide access to spatial data residing in a GDAL layers.
+ *
 */
-class QgsGdalProvider : public QgsRasterDataProvider, QgsGdalProviderBase
+class QgsGdalProvider final: public QgsRasterDataProvider, QgsGdalProviderBase
 {
     Q_OBJECT
 
@@ -150,6 +150,7 @@ class QgsGdalProvider : public QgsRasterDataProvider, QgsGdalProviderBase
 
     bool readBlock( int bandNo, int xBlock, int yBlock, void *data ) override;
     bool readBlock( int bandNo, QgsRectangle  const &viewExtent, int width, int height, void *data, QgsRasterBlockFeedback *feedback = nullptr ) override;
+
     double bandScale( int bandNo ) const override;
     double bandOffset( int bandNo ) const override;
     QList<QgsColorRampShader::ColorRampItem> colorTable( int bandNo )const override;
@@ -199,14 +200,20 @@ class QgsGdalProvider : public QgsRasterDataProvider, QgsGdalProviderBase
     bool setNoDataValue( int bandNo, double noDataValue ) override;
     bool remove() override;
 
-    void reloadData() override;
-
     QString validateCreationOptions( const QStringList &createOptions, const QString &format ) override;
     QString validatePyramidsConfigOptions( QgsRaster::RasterPyramidsFormat pyramidsFormat,
                                            const QStringList &configOptions, const QString &fileFormat ) override;
 
+    QgsPoint transformCoordinates( const QgsPoint &point, TransformType type ) override;
+
+    bool enableProviderResampling( bool enable ) override { mProviderResamplingEnabled = enable; return true; }
+    bool setZoomedInResamplingMethod( ResamplingMethod method ) override { mZoomedInResamplingMethod = method; return true; }
+    bool setZoomedOutResamplingMethod( ResamplingMethod method ) override { mZoomedOutResamplingMethod = method; return true; }
+    bool setMaxOversampling( double factor ) override { mMaxOversampling = factor; return true; }
+
   private:
     QgsGdalProvider( const QgsGdalProvider &other );
+    QgsGdalProvider &operator=( const QgsGdalProvider & ) = delete;
 
     //! Whether mGdalDataset and mGdalBaseDataset have been attempted to be set
     bool mHasInit = false;
@@ -239,8 +246,10 @@ class QgsGdalProvider : public QgsRasterDataProvider, QgsGdalProviderBase
     // update mode
     bool mUpdate;
 
+#if GDAL_VERSION_NUM < GDAL_COMPUTE_VERSION(3,0,0)
     // initialize CRS from wkt
     bool crsFromWkt( const char *wkt );
+#endif
 
     //! Do some initialization on the dataset (e.g. handling of south-up datasets)
     void initBaseDataset();
@@ -294,6 +303,11 @@ class QgsGdalProvider : public QgsRasterDataProvider, QgsGdalProviderBase
     //! Whether a per-dataset mask band is exposed as an alpha band for the point of view of the rest of the application.
     bool mMaskBandExposedAsAlpha = false;
 
+    //! \brief Driver short name.
+    // It is kept in case the driver would be de-registered after the provider has been created.
+    // Which is a very dangerous situation (see #29212)
+    QString mDriverName;
+
     //! Wrapper for GDALGetRasterBand() that takes into account mMaskBandExposedAsAlpha.
     GDALRasterBandH getBand( int bandNo ) const;
 
@@ -328,17 +342,32 @@ class QgsGdalProvider : public QgsRasterDataProvider, QgsGdalProviderBase
     bool worldToPixel( double x, double y, int &col, int &row ) const;
 
     bool mStatisticsAreReliable = false;
+
+    /**
+     * Closes and reinits dataset
+    */
+    void reloadProviderData() override;
+
+    //! Instance of GDAL transformer function used in transformCoordinates() for conversion between image and layer coordinates
+    void *mGdalTransformerArg = nullptr;
+
+    bool canDoResampling(
+      int bandNo,
+      const QgsRectangle &reqExtent,
+      int bufferWidthPix,
+      int bufferHeightPix );
 };
 
 /**
  * Metadata of the GDAL data provider
  */
-class QgsGdalProviderMetadata: public QgsProviderMetadata
+class QgsGdalProviderMetadata final: public QgsProviderMetadata
 {
   public:
     QgsGdalProviderMetadata();
     QVariantMap decodeUri( const QString &uri ) override;
-    QgsGdalProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options ) override;
+    QString encodeUri( const QVariantMap &parts ) override;
+    QgsGdalProvider *createProvider( const QString &uri, const QgsDataProvider::ProviderOptions &options, QgsDataProvider::ReadFlags flags = QgsDataProvider::ReadFlags() ) override;
     QgsGdalProvider *createRasterDataProvider(
       const QString &uri,
       const QString &format,

@@ -134,7 +134,7 @@ void QgsPropertyOverrideButton::init( int propertyKey, const QgsProperty &proper
 
   if ( !ts.isEmpty() )
   {
-    mDataTypesString = ts.join( QStringLiteral( ", " ) );
+    mDataTypesString = ts.join( QLatin1String( ", " ) );
     mActionDataTypes->setText( tr( "Field type: " ) + mDataTypesString );
   }
 
@@ -713,6 +713,9 @@ void QgsPropertyOverrideButton::showAssistant()
       updateSiblingWidgets( isActive() );
       this->emit changed();
     } );
+
+    // if the source layer is removed, we need to dismiss the assistant immediately
+    connect( mVectorLayer, &QObject::destroyed, widget, &QgsPanelWidget::acceptPanel );
 
     connect( widget, &QgsPropertyAssistantWidget::panelAccepted, this, [ = ] { updateGui(); } );
 

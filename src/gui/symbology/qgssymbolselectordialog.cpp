@@ -162,8 +162,8 @@ class SymbolLayerItem : public QStandardItem
         icon = QgsSymbolLayerUtils::symbolPreviewIcon( mSymbol, mSize );
       setIcon( icon );
 
-      if ( parent() )
-        static_cast<SymbolLayerItem *>( parent() )->updatePreview();
+      if ( auto *lParent = parent() )
+        static_cast<SymbolLayerItem *>( lParent )->updatePreview();
     }
 
     int type() const override { return SYMBOL_LAYER_ITEM_TYPE; }
@@ -191,11 +191,11 @@ class SymbolLayerItem : public QStandardItem
           switch ( mSymbol->type() )
           {
             case QgsSymbol::Marker :
-              return QCoreApplication::translate( "SymbolLayerItem", "Marker", nullptr, QCoreApplication::UnicodeUTF8 );
+              return QCoreApplication::translate( "SymbolLayerItem", "Marker" );
             case QgsSymbol::Fill   :
-              return QCoreApplication::translate( "SymbolLayerItem", "Fill", nullptr, QCoreApplication::UnicodeUTF8 );
+              return QCoreApplication::translate( "SymbolLayerItem", "Fill" );
             case QgsSymbol::Line   :
-              return QCoreApplication::translate( "SymbolLayerItem", "Line", nullptr, QCoreApplication::UnicodeUTF8 );
+              return QCoreApplication::translate( "SymbolLayerItem", "Line" );
             default:
               return "Symbol";
           }
@@ -356,9 +356,9 @@ void QgsSymbolSelectorWidget::setContext( const QgsSymbolWidgetContext &context 
 {
   mContext = context;
 
-  if ( mContext.expressionContext() )
+  if ( auto *lExpressionContext = mContext.expressionContext() )
   {
-    mPreviewExpressionContext = *mContext.expressionContext();
+    mPreviewExpressionContext = *lExpressionContext;
     if ( mVectorLayer )
       mPreviewExpressionContext.appendScope( QgsExpressionContextUtils::layerScope( mVectorLayer ) );
 
@@ -385,6 +385,9 @@ QgsSymbolWidgetContext QgsSymbolSelectorWidget::context() const
 
 void QgsSymbolSelectorWidget::loadSymbol( QgsSymbol *symbol, SymbolLayerItem *parent )
 {
+  if ( !symbol )
+    return;
+
   if ( !parent )
   {
     mSymbol = symbol;
@@ -449,6 +452,9 @@ void QgsSymbolSelectorWidget::updateUi()
 
 void QgsSymbolSelectorWidget::updatePreview()
 {
+  if ( !mSymbol )
+    return;
+
   std::unique_ptr< QgsSymbol > symbolClone( mSymbol->clone() );
   QImage preview = symbolClone->bigSymbolPreviewImage( &mPreviewExpressionContext );
   lblPreview->setPixmap( QPixmap::fromImage( preview ) );
@@ -766,6 +772,7 @@ QgsSymbolSelectorDialog::QgsSymbolSelectorDialog( QgsSymbol *symbol, QgsStyle *s
   : QDialog( parent )
 {
   setLayout( new QVBoxLayout() );
+
   mSelectorWidget = new QgsSymbolSelectorWidget( symbol, style, vl, this );
   mButtonBox = new QDialogButtonBox( QDialogButtonBox::Cancel | QDialogButtonBox::Help | QDialogButtonBox::Ok );
 
@@ -776,9 +783,13 @@ QgsSymbolSelectorDialog::QgsSymbolSelectorDialog( QgsSymbol *symbol, QgsStyle *s
   layout()->addWidget( mSelectorWidget );
   layout()->addWidget( mButtonBox );
 
+  connect( mSelectorWidget, &QgsPanelWidget::panelAccepted, this, &QDialog::reject );
+
+  mSelectorWidget->setMinimumSize( 460, 560 );
+  setObjectName( QStringLiteral( "SymbolSelectorDialog" ) );
   QgsGui::instance()->enableAutoGeometryRestore( this );
 
-  // can be embedded in renderer properties dialog
+  // Can be embedded in renderer properties dialog
   if ( embedded )
   {
     mButtonBox->hide();
@@ -926,5 +937,5 @@ QDialogButtonBox *QgsSymbolSelectorDialog::buttonBox() const
 
 void QgsSymbolSelectorDialog::showHelp()
 {
-  QgsHelp::openHelp( QStringLiteral( "working_with_vector/style_library.html#the-symbol-selector" ) );
+  QgsHelp::openHelp( QStringLiteral( "style_library/symbol_selector.html" ) );
 }

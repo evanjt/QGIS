@@ -20,7 +20,6 @@
 #include <QVariant>
 #include <QVector>
 #include <QSharedDataPointer>
-#include "qgsfield_p.h"
 #include "qgis_core.h"
 #include "qgis_sip.h"
 
@@ -35,6 +34,8 @@ typedef QList<int> QgsAttributeList SIP_SKIP;
 #include "qgseditorwidgetsetup.h"
 #include "qgsfieldconstraints.h"
 #include "qgsdefaultvalue.h"
+
+class QgsFieldPrivate;
 
 /**
  * \class QgsField
@@ -59,8 +60,40 @@ class CORE_EXPORT QgsField
     Q_PROPERTY( QString alias READ alias WRITE setAlias )
     Q_PROPERTY( QgsDefaultValue defaultValueDefinition READ defaultValueDefinition WRITE setDefaultValueDefinition )
     Q_PROPERTY( QgsFieldConstraints constraints READ constraints WRITE setConstraints )
+    Q_PROPERTY( ConfigurationFlags configurationFlags READ configurationFlags WRITE setConfigurationFlags )
+
 
   public:
+
+#ifndef SIP_RUN
+
+    /**
+       * Configuration flags for fields
+       * These flags are meant to be user-configurable
+       * and are not describing any information from the data provider.
+       * \note Flags are expressed in the negative forms so that default flags is None.
+       * \since QGIS 3.16
+       */
+#if QT_VERSION < QT_VERSION_CHECK(5, 12, 0)
+    enum ConfigurationFlag
+#else
+    enum class ConfigurationFlag : int
+#endif
+    {
+      None = 0, //!< No flag is defined
+      NotSearchable = 1 << 1, //!< Defines if the field is searchable (used in the locator search for instance)
+      HideFromWms = 1 << 2, //!< Fields is available if layer is served as WMS from QGIS server
+      HideFromWfs = 1 << 3, //!< Fields is available if layer is served as WFS from QGIS server
+    };
+    Q_ENUM( ConfigurationFlag )
+    Q_DECLARE_FLAGS( ConfigurationFlags, ConfigurationFlag )
+#if QT_VERSION < QT_VERSION_CHECK(5, 12, 0)
+    // https://bugreports.qt.io/browse/QTBUG-47652
+    Q_ENUM( ConfigurationFlags )
+#else
+    Q_FLAG( ConfigurationFlags )
+#endif
+#endif
 
     /**
      * Constructor. Constructs a new QgsField object.
@@ -95,7 +128,7 @@ class CORE_EXPORT QgsField
      */
     QgsField &operator =( const QgsField &other ) SIP_SKIP;
 
-    virtual ~QgsField() = default;
+    virtual ~QgsField();
 
     bool operator==( const QgsField &other ) const;
     bool operator!=( const QgsField &other ) const;
@@ -115,6 +148,30 @@ class CORE_EXPORT QgsField
      * \since QGIS 3.0
      */
     QString displayName() const;
+
+    /**
+     * Returns the name to use when displaying this field and adds the alias in parenthesis if it is defined.
+     *
+     * This will be used when working close to the data structure (i.e. building expressions and queries),
+     * when the real field name must be shown but the alias is also useful to understand what the field
+     * represents.
+     *
+     * \see name()
+     * \see alias()
+     * \since QGIS 3.12
+     */
+    QString displayNameWithAlias() const;
+
+
+    /**
+     * Returns the type to use when displaying this field, including the length and precision of the datatype if applicable.
+     *
+     * This will be used when the full datatype with details has to displayed to the user.
+     *
+     * \see type()
+     * \since QGIS 3.14
+     */
+    QString displayType( bool showConstraints = false ) const;
 
     //! Gets variant type of the field as it will be retrieved from data source
     QVariant::Type type() const;
@@ -257,8 +314,39 @@ class CORE_EXPORT QgsField
      */
     void setAlias( const QString &alias );
 
+    /**
+     * Returns the Flags for the field (searchable, …)
+     * \since QGIS 3.16
+     */
+    QgsField::ConfigurationFlags configurationFlags() const SIP_SKIP;
+
+    /**
+     * Sets the Flags for the field (searchable, …)
+     * \since QGIS 3.16
+     */
+    void setConfigurationFlags( QgsField::ConfigurationFlags configurationFlags ) SIP_SKIP;
+
     //! Formats string for display
     QString displayString( const QVariant &v ) const;
+
+    /**
+     * Returns the reabable and translated value of the configuration flag
+     * \since QGIS 3.16
+     */
+    static QString readableConfigurationFlag( QgsField::ConfigurationFlag flag ) SIP_SKIP;
+
+#ifndef SIP_RUN
+
+    /**
+     * Converts the provided variant to a compatible format
+     *
+     * \param v  The value to convert
+     * \param errorMessage if specified, will be set to a descriptive error when a conversion failure occurs
+     *
+     * \returns   TRUE if the conversion was successful
+     */
+    bool convertCompatible( QVariant &v, QString *errorMessage = nullptr ) const;
+#else
 
     /**
      * Converts the provided variant to a compatible format
@@ -268,7 +356,6 @@ class CORE_EXPORT QgsField
      * \returns   TRUE if the conversion was successful
      */
     bool convertCompatible( QVariant &v ) const;
-#ifdef SIP_RUN
     % MethodCode
     PyObject *sipParseErr = NULL;
 
@@ -280,13 +367,12 @@ class CORE_EXPORT QgsField
       if ( sipParseArgs( &sipParseErr, sipArgs, "BJ1", &sipSelf, sipType_QgsField, &sipCpp, sipType_QVariant, &a0, &a0State ) )
       {
         bool sipRes;
+        QString errorMessage;
 
         Py_BEGIN_ALLOW_THREADS
         try
         {
-          QgsDebugMsg( a0->toString() );
-          sipRes = sipCpp->convertCompatible( *a0 );
-          QgsDebugMsg( a0->toString() );
+          sipRes = sipCpp->convertCompatible( *a0, &errorMessage );
         }
         catch ( ... )
         {
@@ -299,24 +385,28 @@ class CORE_EXPORT QgsField
 
         Py_END_ALLOW_THREADS
 
-        PyObject *res = sipConvertFromType( a0, sipType_QVariant, NULL );
-        sipReleaseType( a0, sipType_QVariant, a0State );
-
         if ( !sipRes )
         {
           PyErr_SetString( PyExc_ValueError,
-                           QString( "Value %1 (%2) could not be converted to field type %3." ).arg( a0->toString(), a0->typeName() ).arg( sipCpp->type() ).toUtf8().constData() );
-          sipError = sipErrorFail;
+                           QString( "Value could not be converted to field type %1: %2" ).arg( QMetaType::typeName( sipCpp->type() ), errorMessage ).toUtf8().constData() );
+          sipIsErr = 1;
         }
+        else
+        {
+          PyObject *res = sipConvertFromType( a0, sipType_QVariant, NULL );
+          sipReleaseType( a0, sipType_QVariant, a0State );
+          return res;
+        }
+      }
+      else
+      {
+        // Raise an exception if the arguments couldn't be parsed.
+        sipNoMethod( sipParseErr, sipName_QgsField, sipName_convertCompatible, doc_QgsField_convertCompatible );
 
-        return res;
+        return nullptr;
       }
     }
 
-    // Raise an exception if the arguments couldn't be parsed.
-    sipNoMethod( sipParseErr, sipName_QgsField, sipName_convertCompatible, doc_QgsField_convertCompatible );
-
-    return nullptr;
     % End
 #endif
 
@@ -359,6 +449,8 @@ class CORE_EXPORT QgsField
 }; // class QgsField
 
 Q_DECLARE_METATYPE( QgsField )
+
+Q_DECLARE_OPERATORS_FOR_FLAGS( QgsField::ConfigurationFlags ) SIP_SKIP
 
 //! Writes the field to stream out. QGIS version compatibility is not guaranteed.
 CORE_EXPORT QDataStream &operator<<( QDataStream &out, const QgsField &field );

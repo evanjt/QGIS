@@ -40,16 +40,15 @@ from processing.algs.gdal.GdalUtils import GdalUtils
 
 
 class Grass7Utils:
-
     GRASS_REGION_XMIN = 'GRASS7_REGION_XMIN'
     GRASS_REGION_YMIN = 'GRASS7_REGION_YMIN'
     GRASS_REGION_XMAX = 'GRASS7_REGION_XMAX'
     GRASS_REGION_YMAX = 'GRASS7_REGION_YMAX'
     GRASS_REGION_CELLSIZE = 'GRASS7_REGION_CELLSIZE'
-    GRASS_FOLDER = 'GRASS7_FOLDER'
     GRASS_LOG_COMMANDS = 'GRASS7_LOG_COMMANDS'
     GRASS_LOG_CONSOLE = 'GRASS7_LOG_CONSOLE'
     GRASS_HELP_PATH = 'GRASS_HELP_PATH'
+    GRASS_USE_REXTERNAL = 'GRASS_USE_REXTERNAL'
     GRASS_USE_VEXTERNAL = 'GRASS_USE_VEXTERNAL'
 
     # TODO Review all default options formats
@@ -129,6 +128,7 @@ class Grass7Utils:
         Find GRASS binary path on the operating system.
         Sets global variable Grass7Utils.command
         """
+
         def searchFolder(folder):
             """
             Inline function to search for grass binaries into a folder
@@ -161,8 +161,8 @@ class Grass7Utils:
                 ]
         else:
             cmdList = [
-                "grass76", "grass74", "grass72", "grass70", "grass",
-                "grass76.sh", "grass74.sh", "grass72.sh", "grass70.sh", "grass.sh"
+                "grass78", "grass76", "grass74", "grass72", "grass70", "grass",
+                "grass78.sh", "grass76.sh", "grass74.sh", "grass72.sh", "grass70.sh", "grass.sh"
             ]
 
         # For MS-Windows there is a difference between GRASS Path and GRASS binary
@@ -188,7 +188,7 @@ class Grass7Utils:
 
         if command:
             Grass7Utils.command = command
-            if path is '':
+            if path == '':
                 Grass7Utils.path = os.path.dirname(command)
 
         return command
@@ -205,28 +205,24 @@ class Grass7Utils:
         if not isWindows() and not isMac():
             return ''
 
-        if isMac():
-            folder = ProcessingConfig.getSetting(Grass7Utils.GRASS_FOLDER) or ''
-            if not os.path.exists(folder):
-                folder = None
-        else:
-            folder = None
-
-        if folder is None:
-            # Under MS-Windows, we use OSGEO4W or QGIS Path for folder
-            if isWindows():
-                if "GISBASE" in os.environ:
-                    folder = os.environ["GISBASE"]
-                else:
-                    testfolder = os.path.join(os.path.dirname(QgsApplication.prefixPath()), 'grass')
-                    if os.path.isdir(testfolder):
-                        grassfolders = sorted([f for f in os.listdir(testfolder) if f.startswith("grass-7.") and os.path.isdir(os.path.join(testfolder, f))], reverse=True, key=lambda x: [int(v) for v in x[len("grass-"):].split('.') if v != 'svn'])
-                        if grassfolders:
-                            folder = os.path.join(testfolder, grassfolders[0])
-            elif isMac():
-                # For MacOSX, we scan some well-known directories
-                # Start with QGIS bundle
-                for version in ['', '7', '76', '74', '72', '71', '70']:
+        folder = None
+        # Under MS-Windows, we use GISBASE or QGIS Path for folder
+        if isWindows():
+            if "GISBASE" in os.environ:
+                folder = os.environ["GISBASE"]
+            else:
+                testfolder = os.path.join(os.path.dirname(QgsApplication.prefixPath()), 'grass')
+                if os.path.isdir(testfolder):
+                    grassfolders = sorted([f for f in os.listdir(testfolder) if f.startswith("grass-7.") and os.path.isdir(os.path.join(testfolder, f))], reverse=True, key=lambda x: [int(v) for v in x[len("grass-"):].split('.') if v != 'svn'])
+                    if grassfolders:
+                        folder = os.path.join(testfolder, grassfolders[0])
+        elif isMac():
+            # For MacOSX, first check environment
+            if "GISBASE" in os.environ:
+                folder = os.environ["GISBASE"]
+            else:
+                # Find grass folder if it exists inside QGIS bundle
+                for version in ['', '7', '78', '76', '74', '72', '71', '70']:
                     testfolder = os.path.join(str(QgsApplication.prefixPath()),
                                               'grass{}'.format(version))
                     if os.path.isdir(testfolder):
@@ -234,7 +230,7 @@ class Grass7Utils:
                         break
                     # If nothing found, try standalone GRASS installation
                     if folder is None:
-                        for version in ['6', '4', '2', '1', '0']:
+                        for version in ['8', '6', '4', '2', '1', '0']:
                             testfolder = '/Applications/GRASS-7.{}.app/Contents/MacOS'.format(version)
                             if os.path.isdir(testfolder):
                                 folder = testfolder
@@ -401,6 +397,9 @@ class Grass7Utils:
                     elif 'Segmentation fault' in line:
                         feedback.reportError(line.strip())
                         feedback.reportError('\n' + Grass7Utils.tr('GRASS command crashed :( Try a different set of input parameters and consult the GRASS algorithm manual for more information.') + '\n')
+                        if ProcessingConfig.getSetting(Grass7Utils.GRASS_USE_REXTERNAL):
+                            feedback.reportError(Grass7Utils.tr(
+                                'Suggest disabling the experimental "use r.external" option from the Processing GRASS Provider options.') + '\n')
                         if ProcessingConfig.getSetting(Grass7Utils.GRASS_USE_VEXTERNAL):
                             feedback.reportError(Grass7Utils.tr(
                                 'Suggest disabling the experimental "use v.external" option from the Processing GRASS Provider options.') + '\n')
@@ -466,7 +465,7 @@ class Grass7Utils:
     # the layers.
     @staticmethod
     def endGrassSession():
-        #shutil.rmtree(Grass7Utils.grassMapsetFolder(), True)
+        # shutil.rmtree(Grass7Utils.grassMapsetFolder(), True)
         Grass7Utils.sessionRunning = False
         Grass7Utils.sessionLayers = {}
         Grass7Utils.projectionSet = False
@@ -561,7 +560,7 @@ class Grass7Utils:
             return 'https://grass.osgeo.org/grass{}/manuals/'.format(version)
         else:
             # GRASS not available!
-            return 'https://grass.osgeo.org/grass76/manuals/'
+            return 'https://grass.osgeo.org/grass78/manuals/'
 
     @staticmethod
     def getSupportedOutputRasterExtensions():

@@ -30,7 +30,7 @@ QgsLocatorFilter::QgsLocatorFilter( QObject *parent )
 
 QgsLocatorFilter::Flags QgsLocatorFilter::flags() const
 {
-  return nullptr;
+  return QgsLocatorFilter::Flags();
 }
 
 void QgsLocatorFilter::triggerResultFromAction( const QgsLocatorResult &result, const int actionId )
@@ -42,6 +42,11 @@ void QgsLocatorFilter::triggerResultFromAction( const QgsLocatorResult &result, 
 bool QgsLocatorFilter::stringMatches( const QString &candidate, const QString &search )
 {
   return !search.isEmpty() && candidate.contains( search, Qt::CaseInsensitive );
+}
+
+double QgsLocatorFilter::fuzzyScore( const QString &candidate, const QString &search )
+{
+  return QgsStringUtils::fuzzyScore( candidate, search );
 }
 
 bool QgsLocatorFilter::enabled() const
